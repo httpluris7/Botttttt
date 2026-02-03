@@ -27,7 +27,7 @@ CAMBIOS v2.1:
 - Gasolineras ordenadas por cercanía
 - Encadenamiento inteligente de viajes
 """
-from turtle import update
+
 import urllib.parse
 import random
 from datetime import datetime, timedelta
