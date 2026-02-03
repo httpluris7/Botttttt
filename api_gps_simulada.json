@@ -1,0 +1,771 @@
+{
+  "timestamp": "2026-02-02T16:14:32.922369",
+  "total": 45,
+  "vehiculos": [
+    {
+      "matricula": "5555BBB",
+      "remolque": "R1234BBB",
+      "conductor": "ALBERTO",
+      "telefono": "",
+      "ubicacion": {
+        "lat": 42.218371,
+        "lon": -2.111794,
+        "ciudad": "ARNEDO",
+        "provincia": "La Rioja",
+        "direccion": "Polígono Industrial, ARNEDO"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -5.2,
+      "combustible_pct": 38
+    },
+    {
+      "matricula": "8521NNN",
+      "remolque": "R2222BBB",
+      "conductor": "ALEJANDRO",
+      "telefono": "",
+      "ubicacion": {
+        "lat": 42.424225,
+        "lon": -2.186746,
+        "ciudad": "MENDAVIA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, MENDAVIA"
+      },
+      "estado": "en_ruta",
+      "velocidad": 66,
+      "temperatura": -3.7,
+      "combustible_pct": 71
+    },
+    {
+      "matricula": "2660WFB",
+      "remolque": "R8710HNM",
+      "conductor": "ALEJANDRO DOMINGUEZ",
+      "telefono": "699503525",
+      "ubicacion": {
+        "lat": 42.515523,
+        "lon": -1.66472,
+        "ciudad": "TAFALLA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, TAFALLA"
+      },
+      "estado": "cargando",
+      "velocidad": 0,
+      "temperatura": -9.5,
+      "combustible_pct": 48
+    },
+    {
+      "matricula": "4491MDY",
+      "remolque": "R5488DYM",
+      "conductor": "ALEJANDRO LOPEZ",
+      "telefono": "655911710",
+      "ubicacion": {
+        "lat": 42.515639,
+        "lon": -1.687336,
+        "ciudad": "TAFALLA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, TAFALLA"
+      },
+      "estado": "en_ruta",
+      "velocidad": 75,
+      "temperatura": -5.0,
+      "combustible_pct": 40
+    },
+    {
+      "matricula": "9831NGB",
+      "remolque": "R7570HBX",
+      "conductor": "ALEJANDRO MARTIN",
+      "telefono": "644282804",
+      "ubicacion": {
+        "lat": 42.324609,
+        "lon": -1.864151,
+        "ciudad": "AZAGRA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, AZAGRA"
+      },
+      "estado": "en_ruta",
+      "velocidad": 63,
+      "temperatura": -6.6,
+      "combustible_pct": 75
+    },
+    {
+      "matricula": "1463RZK",
+      "remolque": "R5646GJT",
+      "conductor": "ANTONIO MARTIN",
+      "telefono": "655680896",
+      "ubicacion": {
+        "lat": 42.639237,
+        "lon": -2.056788,
+        "ciudad": "ESTELLA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, ESTELLA"
+      },
+      "estado": "cargando",
+      "velocidad": 0,
+      "temperatura": -20.4,
+      "combustible_pct": 62
+    },
+    {
+      "matricula": "5051SXZ",
+      "remolque": "R7091STW",
+      "conductor": "ANTONIO RUIZ",
+      "telefono": "677408660",
+      "ubicacion": {
+        "lat": 42.319933,
+        "lon": -1.798296,
+        "ciudad": "PERALTA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, PERALTA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": 4.4,
+      "combustible_pct": 55
+    },
+    {
+      "matricula": "2897KCY",
+      "remolque": "R3672MNR",
+      "conductor": "DAVID RODRIGUEZ",
+      "telefono": "688850757",
+      "ubicacion": {
+        "lat": 42.324311,
+        "lon": -1.919467,
+        "ciudad": "SAN ADRIAN",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, SAN ADRIAN"
+      },
+      "estado": "cargando",
+      "velocidad": 0,
+      "temperatura": -21.4,
+      "combustible_pct": 77
+    },
+    {
+      "matricula": "4658MXH",
+      "remolque": "R7179SBS",
+      "conductor": "DIEGO GARCIA",
+      "telefono": "633383049",
+      "ubicacion": {
+        "lat": 42.541751,
+        "lon": -1.662111,
+        "ciudad": "TAFALLA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, TAFALLA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -8.8,
+      "combustible_pct": 74
+    },
+    {
+      "matricula": "3154HRG",
+      "remolque": "R1139ZHB",
+      "conductor": "ENRIQUE GOMEZ",
+      "telefono": "633670681",
+      "ubicacion": {
+        "lat": 42.451643,
+        "lon": -2.072463,
+        "ciudad": "LODOSA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, LODOSA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -13.8,
+      "combustible_pct": 48
+    },
+    {
+      "matricula": "7403LKT",
+      "remolque": "R1225NKL",
+      "conductor": "ENRIQUE LOPEZ",
+      "telefono": "666367616",
+      "ubicacion": {
+        "lat": 42.363057,
+        "lon": -1.931898,
+        "ciudad": "SAN ADRIAN",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, SAN ADRIAN"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -0.6,
+      "combustible_pct": 74
+    },
+    {
+      "matricula": "2342CKX",
+      "remolque": "R8385YTK",
+      "conductor": "ENRIQUE MOLINA",
+      "telefono": "622528724",
+      "ubicacion": {
+        "lat": 42.663667,
+        "lon": -2.008036,
+        "ciudad": "ESTELLA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, ESTELLA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": 1.3,
+      "combustible_pct": 100
+    },
+    {
+      "matricula": "4272FFV",
+      "remolque": "R8641HFJ",
+      "conductor": "FERNANDO GARCIA",
+      "telefono": "633834805",
+      "ubicacion": {
+        "lat": 42.30724,
+        "lon": -1.934903,
+        "ciudad": "SAN ADRIAN",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, SAN ADRIAN"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -1.6,
+      "combustible_pct": 85
+    },
+    {
+      "matricula": "9934KTY",
+      "remolque": "R9857CYZ",
+      "conductor": "FERNANDO MARTINEZ",
+      "telefono": "699488523",
+      "ubicacion": {
+        "lat": 42.445266,
+        "lon": -2.18847,
+        "ciudad": "MENDAVIA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, MENDAVIA"
+      },
+      "estado": "cargando",
+      "velocidad": 0,
+      "temperatura": 2.6,
+      "combustible_pct": 63
+    },
+    {
+      "matricula": "5774SSM",
+      "remolque": "R3359LKY",
+      "conductor": "FRANCISCO ALVAREZ",
+      "telefono": "699663730",
+      "ubicacion": {
+        "lat": 42.209936,
+        "lon": -2.084068,
+        "ciudad": "ARNEDO",
+        "provincia": "La Rioja",
+        "direccion": "Polígono Industrial, ARNEDO"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -14.1,
+      "combustible_pct": 47
+    },
+    {
+      "matricula": "8521BBB",
+      "remolque": "R2222BBB",
+      "conductor": "JAVIER MART",
+      "telefono": "",
+      "ubicacion": {
+        "lat": 42.352208,
+        "lon": -1.801925,
+        "ciudad": "PERALTA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, PERALTA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -11.5,
+      "combustible_pct": 65
+    },
+    {
+      "matricula": "7310TKD",
+      "remolque": "R9992ZGP",
+      "conductor": "JAVIER RODRIGUEZ",
+      "telefono": "633669575",
+      "ubicacion": {
+        "lat": 42.676406,
+        "lon": -2.052894,
+        "ciudad": "ESTELLA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, ESTELLA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -7.0,
+      "combustible_pct": 78
+    },
+    {
+      "matricula": "7435KKL",
+      "remolque": "R3874HGJ",
+      "conductor": "JESUS",
+      "telefono": "",
+      "ubicacion": {
+        "lat": 42.068229,
+        "lon": -1.57971,
+        "ciudad": "TUDELA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, TUDELA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -15.5,
+      "combustible_pct": 51
+    },
+    {
+      "matricula": "3475GHJ",
+      "remolque": "R9573DFV",
+      "conductor": "JESUS LA PERLA",
+      "telefono": "675849387",
+      "ubicacion": {
+        "lat": 42.502182,
+        "lon": -1.692805,
+        "ciudad": "TAFALLA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, TAFALLA"
+      },
+      "estado": "cargando",
+      "velocidad": 0,
+      "temperatura": -14.9,
+      "combustible_pct": 47
+    },
+    {
+      "matricula": "9136YCS",
+      "remolque": "R1047CGL",
+      "conductor": "JORGE PEREZ",
+      "telefono": "688748040",
+      "ubicacion": {
+        "lat": 42.415335,
+        "lon": -2.188477,
+        "ciudad": "MENDAVIA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, MENDAVIA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": 3.0,
+      "combustible_pct": 42
+    },
+    {
+      "matricula": "1190ZBM",
+      "remolque": "R3834WHJ",
+      "conductor": "JOSE HERNANDEZ",
+      "telefono": "655256513",
+      "ubicacion": {
+        "lat": 42.44489,
+        "lon": -2.058528,
+        "ciudad": "LODOSA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, LODOSA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -9.6,
+      "combustible_pct": 90
+    },
+    {
+      "matricula": "3072FJV",
+      "remolque": "R1692KGV",
+      "conductor": "JOSE MORENO",
+      "telefono": "688779579",
+      "ubicacion": {
+        "lat": 42.306073,
+        "lon": -1.962151,
+        "ciudad": "SAN ADRIAN",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, SAN ADRIAN"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -15.3,
+      "combustible_pct": 94
+    },
+    {
+      "matricula": "2490FGL",
+      "remolque": "R3811VDJ",
+      "conductor": "JOSE ROMERO",
+      "telefono": "677518210",
+      "ubicacion": {
+        "lat": 42.36308,
+        "lon": -1.829694,
+        "ciudad": "PERALTA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, PERALTA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -2.3,
+      "combustible_pct": 37
+    },
+    {
+      "matricula": "8521NNN",
+      "remolque": "R2222BBB",
+      "conductor": "JUAN CARLOS",
+      "telefono": "611213412",
+      "ubicacion": {
+        "lat": 42.437346,
+        "lon": -2.448051,
+        "ciudad": "LOGROÑO",
+        "provincia": "La Rioja",
+        "direccion": "Polígono Industrial, LOGROÑO"
+      },
+      "estado": "en_ruta",
+      "velocidad": 69,
+      "temperatura": -6.5,
+      "combustible_pct": 85
+    },
+    {
+      "matricula": "6433HXJ",
+      "remolque": "R7179MVF",
+      "conductor": "JUAN GOMEZ",
+      "telefono": "688308866",
+      "ubicacion": {
+        "lat": 42.184646,
+        "lon": -1.770194,
+        "ciudad": "ALFARO",
+        "provincia": "La Rioja",
+        "direccion": "Polígono Industrial, ALFARO"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -5.0,
+      "combustible_pct": 78
+    },
+    {
+      "matricula": "3719HTV",
+      "remolque": "R1299FXG",
+      "conductor": "JUAN GONZALEZ",
+      "telefono": "666823154",
+      "ubicacion": {
+        "lat": 42.29122,
+        "lon": -1.99446,
+        "ciudad": "CALAHORRA",
+        "provincia": "La Rioja",
+        "direccion": "Polígono Industrial, CALAHORRA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -13.1,
+      "combustible_pct": 38
+    },
+    {
+      "matricula": "5113NSC",
+      "remolque": "R5213BCS",
+      "conductor": "JUAN JOSE",
+      "telefono": "733465534",
+      "ubicacion": {
+        "lat": 42.339413,
+        "lon": -1.781956,
+        "ciudad": "PERALTA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, PERALTA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": 4.4,
+      "combustible_pct": 45
+    },
+    {
+      "matricula": "1234DFT",
+      "remolque": "R0988LKJ",
+      "conductor": "JUAN PEDRO",
+      "telefono": "657869543",
+      "ubicacion": {
+        "lat": 42.833105,
+        "lon": -1.66234,
+        "ciudad": "PAMPLONA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, PAMPLONA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -6.1,
+      "combustible_pct": 93
+    },
+    {
+      "matricula": "8914HKK",
+      "remolque": "R3528RFF",
+      "conductor": "JUAN SANCHEZ",
+      "telefono": "633698150",
+      "ubicacion": {
+        "lat": 41.671986,
+        "lon": -0.887775,
+        "ciudad": "ZARAGOZA",
+        "provincia": "Zaragoza",
+        "direccion": "Polígono Industrial, ZARAGOZA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -12.4,
+      "combustible_pct": 35
+    },
+    {
+      "matricula": "4885NFF",
+      "remolque": "R4111BBV",
+      "conductor": "LUIS ARNALDO",
+      "telefono": "611213412",
+      "ubicacion": {
+        "lat": 41.661795,
+        "lon": -0.894398,
+        "ciudad": "ZARAGOZA",
+        "provincia": "Zaragoza",
+        "direccion": "Polígono Industrial, ZARAGOZA"
+      },
+      "estado": "cargando",
+      "velocidad": 0,
+      "temperatura": 0.3,
+      "combustible_pct": 95
+    },
+    {
+      "matricula": "6727YHJ",
+      "remolque": "R7645SZK",
+      "conductor": "LUIS DIAZ",
+      "telefono": "677261687",
+      "ubicacion": {
+        "lat": 42.430533,
+        "lon": -2.194011,
+        "ciudad": "MENDAVIA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, MENDAVIA"
+      },
+      "estado": "en_ruta",
+      "velocidad": 61,
+      "temperatura": 1.4,
+      "combustible_pct": 44
+    },
+    {
+      "matricula": "8895NFN",
+      "remolque": "R9632BBC",
+      "conductor": "LUIS MANUEL",
+      "telefono": "722758123",
+      "ubicacion": {
+        "lat": 42.342805,
+        "lon": -1.903674,
+        "ciudad": "AZAGRA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, AZAGRA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -20.3,
+      "combustible_pct": 54
+    },
+    {
+      "matricula": "7247FNS",
+      "remolque": "R6540VZM",
+      "conductor": "MIGUEL ALONSO",
+      "telefono": "677877262",
+      "ubicacion": {
+        "lat": 42.845197,
+        "lon": -1.668273,
+        "ciudad": "PAMPLONA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, PAMPLONA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": 1.9,
+      "combustible_pct": 80
+    },
+    {
+      "matricula": "3876JJN",
+      "remolque": "R1773VBC",
+      "conductor": "OSCAR GUTIERREZ",
+      "telefono": "622513010",
+      "ubicacion": {
+        "lat": 42.093295,
+        "lon": -1.608094,
+        "ciudad": "TUDELA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, TUDELA"
+      },
+      "estado": "cargando",
+      "velocidad": 0,
+      "temperatura": -15.1,
+      "combustible_pct": 97
+    },
+    {
+      "matricula": "3061PLZ",
+      "remolque": "R1207FYC",
+      "conductor": "OSCAR PEREZ",
+      "telefono": "688318452",
+      "ubicacion": {
+        "lat": 42.289899,
+        "lon": -1.854317,
+        "ciudad": "AZAGRA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, AZAGRA"
+      },
+      "estado": "en_ruta",
+      "velocidad": 78,
+      "temperatura": 4.0,
+      "combustible_pct": 43
+    },
+    {
+      "matricula": "8521LCC",
+      "remolque": "R4117BCC",
+      "conductor": "PEDRO LUIS",
+      "telefono": "611213412",
+      "ubicacion": {
+        "lat": 42.442597,
+        "lon": -2.059552,
+        "ciudad": "LODOSA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, LODOSA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -0.3,
+      "combustible_pct": 84
+    },
+    {
+      "matricula": "8444DCT",
+      "remolque": "R7519GGG",
+      "conductor": "RAFAEL DIAZ",
+      "telefono": "655159881",
+      "ubicacion": {
+        "lat": 42.413809,
+        "lon": -2.064385,
+        "ciudad": "LODOSA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, LODOSA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -2.0,
+      "combustible_pct": 34
+    },
+    {
+      "matricula": "1187VSD",
+      "remolque": "R7800RCK",
+      "conductor": "RAMON BLANCO",
+      "telefono": "666415316",
+      "ubicacion": {
+        "lat": 41.621549,
+        "lon": -0.86434,
+        "ciudad": "ZARAGOZA",
+        "provincia": "Zaragoza",
+        "direccion": "Polígono Industrial, ZARAGOZA"
+      },
+      "estado": "en_ruta",
+      "velocidad": 61,
+      "temperatura": -18.5,
+      "combustible_pct": 50
+    },
+    {
+      "matricula": "8617ZRM",
+      "remolque": "R8199NXG",
+      "conductor": "RAMON MARTIN",
+      "telefono": "655312885",
+      "ubicacion": {
+        "lat": 42.054703,
+        "lon": -1.571096,
+        "ciudad": "TUDELA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, TUDELA"
+      },
+      "estado": "en_ruta",
+      "velocidad": 83,
+      "temperatura": -16.7,
+      "combustible_pct": 59
+    },
+    {
+      "matricula": "5064KGB",
+      "remolque": "R3343YPR",
+      "conductor": "RAUL DOMINGUEZ",
+      "telefono": "644564214",
+      "ubicacion": {
+        "lat": 42.791213,
+        "lon": -1.627204,
+        "ciudad": "PAMPLONA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, PAMPLONA"
+      },
+      "estado": "disponible",
+      "velocidad": 0,
+      "temperatura": -2.7,
+      "combustible_pct": 92
+    },
+    {
+      "matricula": "3309RZL",
+      "remolque": "R2425GPN",
+      "conductor": "RAUL NAVARRO",
+      "telefono": "688693144",
+      "ubicacion": {
+        "lat": 42.320201,
+        "lon": -1.929949,
+        "ciudad": "SAN ADRIAN",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, SAN ADRIAN"
+      },
+      "estado": "en_ruta",
+      "velocidad": 81,
+      "temperatura": 4.3,
+      "combustible_pct": 87
+    },
+    {
+      "matricula": "9404PNH",
+      "remolque": "R9867FSN",
+      "conductor": "RUBEN DOMINGUEZ",
+      "telefono": "644379559",
+      "ubicacion": {
+        "lat": 42.308132,
+        "lon": -1.938091,
+        "ciudad": "CALAHORRA",
+        "provincia": "La Rioja",
+        "direccion": "Polígono Industrial, CALAHORRA"
+      },
+      "estado": "en_ruta",
+      "velocidad": 60,
+      "temperatura": -18.7,
+      "combustible_pct": 38
+    },
+    {
+      "matricula": "8183ZVT",
+      "remolque": "R9263CHD",
+      "conductor": "SERGIO RODRIGUEZ",
+      "telefono": "644455819",
+      "ubicacion": {
+        "lat": 42.079931,
+        "lon": -1.602929,
+        "ciudad": "TUDELA",
+        "provincia": "Navarra",
+        "direccion": "Polígono Industrial, TUDELA"
+      },
+      "estado": "en_ruta",
+      "velocidad": 71,
+      "temperatura": 0.3,
+      "combustible_pct": 65
+    },
+    {
+      "matricula": "6337TPX",
+      "remolque": "R3891LGK",
+      "conductor": "SERGIO SERRANO",
+      "telefono": "622694713",
+      "ubicacion": {
+        "lat": 42.276744,
+        "lon": -1.961155,
+        "ciudad": "CALAHORRA",
+        "provincia": "La Rioja",
+        "direccion": "Polígono Industrial, CALAHORRA"
+      },
+      "estado": "cargando",
+      "velocidad": 0,
+      "temperatura": -12.3,
+      "combustible_pct": 96
+    },
+    {
+      "matricula": "5037CVX",
+      "remolque": "R9190CGZ",
+      "conductor": "VICENTE GONZALEZ",
+      "telefono": "699705700",
+      "ubicacion": {
+        "lat": 41.619955,
+        "lon": -0.893942,
+        "ciudad": "ZARAGOZA",
+        "provincia": "Zaragoza",
+        "direccion": "Polígono Industrial, ZARAGOZA"
+      },
+      "estado": "en_ruta",
+      "velocidad": 67,
+      "temperatura": 3.1,
+      "combustible_pct": 38
+    }
+  ]
+}
