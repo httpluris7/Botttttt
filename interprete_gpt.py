@@ -1,6 +1,6 @@
 """
 Interprete GPT para mensajes de conductores
-Version 4.0 - Con MUCHOS ejemplos para mejor detección
+Version 5.0 - Con intenciones de GESTIONES (añadir/modificar conductor/viaje)
 """
 
 import os
@@ -24,6 +24,36 @@ Tu trabajo es:
 3. Responder SOLO con JSON válido
 
 INTENCIONES DISPONIBLES:
+
+=== GESTIONES (ADMIN) ===
+
+15. añadir_conductor - Quiere dar de alta un conductor nuevo:
+    - Añadir conductor, nuevo conductor, alta conductor
+    - Crear conductor, registrar conductor, dar de alta conductor
+    - Meter un conductor nuevo, añadir camionero, nuevo camionero
+
+16. añadir_viaje - Quiere crear un viaje nuevo:
+    - Añadir viaje, nuevo viaje, crear viaje
+    - Registrar viaje, meter viaje, nuevo porte
+    - Añadir carga, nueva carga, crear carga
+
+17. modificar_conductor - Quiere editar datos de un conductor:
+    - Modificar conductor, editar conductor, cambiar conductor
+    - Actualizar conductor, corregir conductor, editar camionero
+
+18. modificar_viaje - Quiere editar un viaje existente:
+    - Modificar viaje, editar viaje, cambiar viaje
+    - Actualizar viaje, corregir viaje, editar carga
+
+19. menu_gestiones - Quiere ver el menú de gestiones general:
+    - Gestiones, menú gestiones, administrar
+    - Panel de gestión, opciones de gestión
+
+20. modificar_viaje_ruta - Quiere modificar un viaje de un conductor que está en ruta:
+- Modificar viaje en ruta, cambiar ruta conductor
+- Actualizar viaje en curso, modificar carga en ruta
+- Cambiar destino del conductor en ruta
+=== CONSULTAS ===
 
 1. consultar_gasolineras - TODO lo relacionado con combustible:
    - Gasolineras, gasolina, diesel, gasoil, repostar, combustible, fuel
@@ -81,6 +111,7 @@ serca/sercana = cerca/cercana | aver = a ver | k = que
 gasoil = diesel/gasoil | aser = hacer | boi = voy
 kiero = quiero | keda = queda | kedar = quedar
 nesesito = necesito | nesecito = necesito | ecesito = necesito
+añadir = añadir | anadir = añadir | agregar = añadir
 
 Responde SOLO con JSON:
 {
@@ -89,6 +120,142 @@ Responde SOLO con JSON:
     "confianza": 0.95,
     "parametros": {}
 }
+
+========================================
+EJEMPLOS DE GESTIONES:
+========================================
+
+"quiero añadir un conductor"
+{"intencion": "añadir_conductor", "texto_corregido": "Quiero añadir un conductor", "confianza": 0.95, "parametros": {}}
+
+"añadir conductor"
+{"intencion": "añadir_conductor", "texto_corregido": "Añadir conductor", "confianza": 0.95, "parametros": {}}
+
+"nuevo conductor"
+{"intencion": "añadir_conductor", "texto_corregido": "Nuevo conductor", "confianza": 0.95, "parametros": {}}
+
+"dar de alta un conductor"
+{"intencion": "añadir_conductor", "texto_corregido": "Dar de alta un conductor", "confianza": 0.95, "parametros": {}}
+
+"alta conductor"
+{"intencion": "añadir_conductor", "texto_corregido": "Alta conductor", "confianza": 0.95, "parametros": {}}
+
+"quiero meter un conductor nuevo"
+{"intencion": "añadir_conductor", "texto_corregido": "Quiero meter un conductor nuevo", "confianza": 0.95, "parametros": {}}
+
+"añadir camionero"
+{"intencion": "añadir_conductor", "texto_corregido": "Añadir camionero", "confianza": 0.95, "parametros": {}}
+
+"nuevo camionero"
+{"intencion": "añadir_conductor", "texto_corregido": "Nuevo camionero", "confianza": 0.95, "parametros": {}}
+
+"registrar conductor"
+{"intencion": "añadir_conductor", "texto_corregido": "Registrar conductor", "confianza": 0.95, "parametros": {}}
+
+"crear conductor"
+{"intencion": "añadir_conductor", "texto_corregido": "Crear conductor", "confianza": 0.95, "parametros": {}}
+
+"kiero anadir conductor"
+{"intencion": "añadir_conductor", "texto_corregido": "Quiero añadir conductor", "confianza": 0.95, "parametros": {}}
+
+"añadir viaje"
+{"intencion": "añadir_viaje", "texto_corregido": "Añadir viaje", "confianza": 0.95, "parametros": {}}
+
+"nuevo viaje"
+{"intencion": "añadir_viaje", "texto_corregido": "Nuevo viaje", "confianza": 0.95, "parametros": {}}
+
+"quiero crear un viaje"
+{"intencion": "añadir_viaje", "texto_corregido": "Quiero crear un viaje", "confianza": 0.95, "parametros": {}}
+
+"añadir carga"
+{"intencion": "añadir_viaje", "texto_corregido": "Añadir carga", "confianza": 0.95, "parametros": {}}
+
+"nueva carga"
+{"intencion": "añadir_viaje", "texto_corregido": "Nueva carga", "confianza": 0.95, "parametros": {}}
+
+"modificar viaje en ruta"
+{"intencion": "modificar_viaje_ruta", "texto_corregido": "Modificar viaje en ruta", "confianza": 0.95, "parametros": {}}
+
+"cambiar ruta del conductor"
+{"intencion": "modificar_viaje_ruta", "texto_corregido": "Cambiar ruta del conductor", "confianza": 0.95, "parametros": {}}
+
+"quiero modificar un viaje en curso"
+{"intencion": "modificar_viaje_ruta", "texto_corregido": "Quiero modificar un viaje en curso", "confianza": 0.95, "parametros": {}}
+
+"actualizar viaje de conductor en ruta"
+{"intencion": "modificar_viaje_ruta", "texto_corregido": "Actualizar viaje de conductor en ruta", "confianza": 0.95, "parametros": {}}
+
+"cambiar viaje en ruta"
+{"intencion": "modificar_viaje_ruta", "texto_corregido": "Cambiar viaje en ruta", "confianza": 0.95, "parametros": {}}
+
+"crear porte"
+{"intencion": "añadir_viaje", "texto_corregido": "Crear porte", "confianza": 0.95, "parametros": {}}
+
+"nuevo porte"
+{"intencion": "añadir_viaje", "texto_corregido": "Nuevo porte", "confianza": 0.95, "parametros": {}}
+
+"registrar viaje"
+{"intencion": "añadir_viaje", "texto_corregido": "Registrar viaje", "confianza": 0.95, "parametros": {}}
+
+"meter viaje nuevo"
+{"intencion": "añadir_viaje", "texto_corregido": "Meter viaje nuevo", "confianza": 0.95, "parametros": {}}
+
+"kiero añadir un viaje"
+{"intencion": "añadir_viaje", "texto_corregido": "Quiero añadir un viaje", "confianza": 0.95, "parametros": {}}
+
+"modificar conductor"
+{"intencion": "modificar_conductor", "texto_corregido": "Modificar conductor", "confianza": 0.95, "parametros": {}}
+
+"editar conductor"
+{"intencion": "modificar_conductor", "texto_corregido": "Editar conductor", "confianza": 0.95, "parametros": {}}
+
+"cambiar datos conductor"
+{"intencion": "modificar_conductor", "texto_corregido": "Cambiar datos conductor", "confianza": 0.95, "parametros": {}}
+
+"actualizar conductor"
+{"intencion": "modificar_conductor", "texto_corregido": "Actualizar conductor", "confianza": 0.95, "parametros": {}}
+
+"corregir conductor"
+{"intencion": "modificar_conductor", "texto_corregido": "Corregir conductor", "confianza": 0.95, "parametros": {}}
+
+"editar camionero"
+{"intencion": "modificar_conductor", "texto_corregido": "Editar camionero", "confianza": 0.95, "parametros": {}}
+
+"modificar camionero"
+{"intencion": "modificar_conductor", "texto_corregido": "Modificar camionero", "confianza": 0.95, "parametros": {}}
+
+"modificar viaje"
+{"intencion": "modificar_viaje", "texto_corregido": "Modificar viaje", "confianza": 0.95, "parametros": {}}
+
+"editar viaje"
+{"intencion": "modificar_viaje", "texto_corregido": "Editar viaje", "confianza": 0.95, "parametros": {}}
+
+"cambiar viaje"
+{"intencion": "modificar_viaje", "texto_corregido": "Cambiar viaje", "confianza": 0.95, "parametros": {}}
+
+"actualizar viaje"
+{"intencion": "modificar_viaje", "texto_corregido": "Actualizar viaje", "confianza": 0.95, "parametros": {}}
+
+"corregir viaje"
+{"intencion": "modificar_viaje", "texto_corregido": "Corregir viaje", "confianza": 0.95, "parametros": {}}
+
+"editar carga"
+{"intencion": "modificar_viaje", "texto_corregido": "Editar carga", "confianza": 0.95, "parametros": {}}
+
+"modificar carga"
+{"intencion": "modificar_viaje", "texto_corregido": "Modificar carga", "confianza": 0.95, "parametros": {}}
+
+"gestiones"
+{"intencion": "menu_gestiones", "texto_corregido": "Gestiones", "confianza": 0.95, "parametros": {}}
+
+"menu gestiones"
+{"intencion": "menu_gestiones", "texto_corregido": "Menú gestiones", "confianza": 0.95, "parametros": {}}
+
+"administrar"
+{"intencion": "menu_gestiones", "texto_corregido": "Administrar", "confianza": 0.90, "parametros": {}}
+
+"panel de gestion"
+{"intencion": "menu_gestiones", "texto_corregido": "Panel de gestión", "confianza": 0.90, "parametros": {}}
 
 ========================================
 EJEMPLOS DE GASOLINERAS (MUCHOS):
@@ -100,65 +267,32 @@ EJEMPLOS DE GASOLINERAS (MUCHOS):
 "necesito echar gasoil"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Necesito echar gasoil", "confianza": 0.95, "parametros": {}}
 
-"necesito echar diesel"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Necesito echar diesel", "confianza": 0.95, "parametros": {}}
-
-"necesito echar gasolina"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Necesito echar gasolina", "confianza": 0.95, "parametros": {}}
-
-"nesesito repostar"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Necesito repostar", "confianza": 0.95, "parametros": {}}
-
-"nesecito echar gasoil"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Necesito echar gasoil", "confianza": 0.95, "parametros": {}}
-
-"tengo que repostar"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Tengo que repostar", "confianza": 0.95, "parametros": {}}
-
-"tengo k repostar"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Tengo que repostar", "confianza": 0.95, "parametros": {}}
-
-"tngo k repostar"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Tengo que repostar", "confianza": 0.95, "parametros": {}}
-
-"tengo que echar gasoil"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Tengo que echar gasoil", "confianza": 0.95, "parametros": {}}
-
-"tengo k echar gasoil"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Tengo que echar gasoil", "confianza": 0.95, "parametros": {}}
-
 "tengo k echar diesel"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Tengo que echar diesel", "confianza": 0.95, "parametros": {}}
-
-"donde puedo repostar"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Dónde puedo repostar?", "confianza": 0.95, "parametros": {}}
-
-"dnd puedo repostar"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Dónde puedo repostar?", "confianza": 0.95, "parametros": {}}
-
-"donde echo gasoil"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Dónde echo gasoil?", "confianza": 0.95, "parametros": {}}
-
-"dnd echo gasoil"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Dónde echo gasoil?", "confianza": 0.95, "parametros": {}}
-
-"donde echo diesel"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Dónde echo diesel?", "confianza": 0.95, "parametros": {}}
-
-"donde hay gasolinera"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Dónde hay gasolinera?", "confianza": 0.95, "parametros": {}}
 
 "dnd hay gasolineras"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Dónde hay gasolineras?", "confianza": 0.95, "parametros": {}}
 
+"donde hay gasolineras"
+{"intencion": "consultar_gasolineras", "texto_corregido": "Dónde hay gasolineras?", "confianza": 0.95, "parametros": {}}
+
+"busco gasolinera"
+{"intencion": "consultar_gasolineras", "texto_corregido": "Busco gasolinera", "confianza": 0.95, "parametros": {}}
+
 "gasolineras cerca"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Gasolineras cerca", "confianza": 0.95, "parametros": {}}
 
-"gasolinera cercana"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Gasolinera cercana", "confianza": 0.95, "parametros": {}}
+"gasolineras cercanas"
+{"intencion": "consultar_gasolineras", "texto_corregido": "Gasolineras cercanas", "confianza": 0.95, "parametros": {}}
 
 "gasolinera sercana"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Gasolinera cercana", "confianza": 0.95, "parametros": {}}
+
+"gasolinera mas cercana"
+{"intencion": "consultar_gasolineras", "texto_corregido": "Gasolinera más cercana", "confianza": 0.95, "parametros": {}}
+
+"gasolinera mas sercana"
+{"intencion": "consultar_gasolineras", "texto_corregido": "Gasolinera más cercana", "confianza": 0.95, "parametros": {}}
 
 "gasolineras baratas"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Gasolineras baratas", "confianza": 0.95, "parametros": {}}
@@ -166,38 +300,14 @@ EJEMPLOS DE GASOLINERAS (MUCHOS):
 "gasolinera barata"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Gasolinera barata", "confianza": 0.95, "parametros": {}}
 
-"busco gasolinera"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Busco gasolinera", "confianza": 0.95, "parametros": {}}
-
 "busco gasolinera barata"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Busco gasolinera barata", "confianza": 0.95, "parametros": {}}
 
-"me queda poca gasolina"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Me queda poca gasolina", "confianza": 0.95, "parametros": {}}
-
-"me keda poca gasolina"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Me queda poca gasolina", "confianza": 0.95, "parametros": {}}
-
-"me queda poco diesel"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Me queda poco diesel", "confianza": 0.95, "parametros": {}}
-
-"me queda poco gasoil"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Me queda poco gasoil", "confianza": 0.95, "parametros": {}}
-
-"me quedo sin gasolina"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Me quedo sin gasolina", "confianza": 0.95, "parametros": {}}
-
-"me quedo sin diesel"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Me quedo sin diesel", "confianza": 0.95, "parametros": {}}
-
-"me quedo sin combustible"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Me quedo sin combustible", "confianza": 0.95, "parametros": {}}
-
-"voy sin gasoil"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Voy sin gasoil", "confianza": 0.95, "parametros": {}}
-
 "tengo poca gasolina"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Tengo poca gasolina", "confianza": 0.95, "parametros": {}}
+
+"me queda poca gasolina"
+{"intencion": "consultar_gasolineras", "texto_corregido": "Me queda poca gasolina", "confianza": 0.95, "parametros": {}}
 
 "tengo poco diesel"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Tengo poco diesel", "confianza": 0.95, "parametros": {}}
@@ -208,47 +318,14 @@ EJEMPLOS DE GASOLINERAS (MUCHOS):
 "llenar deposito"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Llenar depósito", "confianza": 0.95, "parametros": {}}
 
-"tengo que llenar"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Tengo que llenar", "confianza": 0.95, "parametros": {}}
-
-"hay que echar combustible"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Hay que echar combustible", "confianza": 0.95, "parametros": {}}
-
-"kiero echar gasoil"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Quiero echar gasoil", "confianza": 0.95, "parametros": {}}
-
-"quiero repostar"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Quiero repostar", "confianza": 0.95, "parametros": {}}
-
 "gasolineras en zaragoza"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Gasolineras en Zaragoza", "confianza": 0.95, "parametros": {"ciudad": "Zaragoza"}}
 
 "gasolineras en madrid"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Gasolineras en Madrid", "confianza": 0.95, "parametros": {"ciudad": "Madrid"}}
 
-"gasolineras en barcelona"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Gasolineras en Barcelona", "confianza": 0.95, "parametros": {"ciudad": "Barcelona"}}
-
 "gasolineras en navarra"
 {"intencion": "consultar_gasolineras", "texto_corregido": "Gasolineras en Navarra", "confianza": 0.95, "parametros": {"ciudad": "Navarra"}}
-
-"busco gasolinera en murcia"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Busco gasolinera en Murcia", "confianza": 0.95, "parametros": {"ciudad": "Murcia"}}
-
-"donde repostar en valencia"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Dónde repostar en Valencia?", "confianza": 0.95, "parametros": {"ciudad": "Valencia"}}
-
-"fuel"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Fuel", "confianza": 0.90, "parametros": {}}
-
-"combustible"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Combustible", "confianza": 0.90, "parametros": {}}
-
-"repostar"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Repostar", "confianza": 0.90, "parametros": {}}
-
-"gasoil"
-{"intencion": "consultar_gasolineras", "texto_corregido": "Gasoil", "confianza": 0.90, "parametros": {}}
 
 ========================================
 EJEMPLOS DE VIAJES:
@@ -263,56 +340,17 @@ EJEMPLOS DE VIAJES:
 "k viajes tngo"
 {"intencion": "consultar_viajes", "texto_corregido": "Qué viajes tengo?", "confianza": 0.95, "parametros": {}}
 
-"q viajes tengo pa oy"
-{"intencion": "consultar_viajes", "texto_corregido": "Qué viajes tengo para hoy?", "confianza": 0.95, "parametros": {}}
-
 "mis cargas"
 {"intencion": "consultar_viajes", "texto_corregido": "Mis cargas", "confianza": 0.95, "parametros": {}}
-
-"que cargas tengo"
-{"intencion": "consultar_viajes", "texto_corregido": "Qué cargas tengo?", "confianza": 0.95, "parametros": {}}
-
-"k cargas tngo"
-{"intencion": "consultar_viajes", "texto_corregido": "Qué cargas tengo?", "confianza": 0.95, "parametros": {}}
 
 "donde voy"
 {"intencion": "consultar_viajes", "texto_corregido": "Dónde voy?", "confianza": 0.95, "parametros": {}}
 
-"dnd voy"
-{"intencion": "consultar_viajes", "texto_corregido": "Dónde voy?", "confianza": 0.95, "parametros": {}}
-
-"a donde voy"
-{"intencion": "consultar_viajes", "texto_corregido": "A dónde voy?", "confianza": 0.95, "parametros": {}}
-
 "mis rutas"
 {"intencion": "consultar_viajes", "texto_corregido": "Mis rutas", "confianza": 0.95, "parametros": {}}
 
-"que rutas tengo"
-{"intencion": "consultar_viajes", "texto_corregido": "Qué rutas tengo?", "confianza": 0.95, "parametros": {}}
-
-"mis portes"
-{"intencion": "consultar_viajes", "texto_corregido": "Mis portes", "confianza": 0.95, "parametros": {}}
-
-"que tengo que cargar"
-{"intencion": "consultar_viajes", "texto_corregido": "Qué tengo que cargar?", "confianza": 0.95, "parametros": {}}
-
-"k tngo k cargar"
-{"intencion": "consultar_viajes", "texto_corregido": "Qué tengo que cargar?", "confianza": 0.95, "parametros": {}}
-
-"que llevo hoy"
-{"intencion": "consultar_viajes", "texto_corregido": "Qué llevo hoy?", "confianza": 0.95, "parametros": {}}
-
-"k yevo oy"
-{"intencion": "consultar_viajes", "texto_corregido": "Qué llevo hoy?", "confianza": 0.95, "parametros": {}}
-
-"hay viajes"
-{"intencion": "consultar_viajes", "texto_corregido": "Hay viajes?", "confianza": 0.95, "parametros": {}}
-
-"tengo viajes"
-{"intencion": "consultar_viajes", "texto_corregido": "Tengo viajes?", "confianza": 0.95, "parametros": {}}
-
 ========================================
-EJEMPLOS DE VEHÍCULO:
+OTROS EJEMPLOS:
 ========================================
 
 "mi camion"
@@ -321,177 +359,26 @@ EJEMPLOS DE VEHÍCULO:
 "mi tractora"
 {"intencion": "consultar_vehiculo", "texto_corregido": "Mi tractora", "confianza": 0.95, "parametros": {}}
 
-"cual es mi tractora"
-{"intencion": "consultar_vehiculo", "texto_corregido": "Cuál es mi tractora?", "confianza": 0.95, "parametros": {}}
-
-"cual es mi camion"
-{"intencion": "consultar_vehiculo", "texto_corregido": "Cuál es mi camión?", "confianza": 0.95, "parametros": {}}
-
-"que camion tengo"
-{"intencion": "consultar_vehiculo", "texto_corregido": "Qué camión tengo?", "confianza": 0.95, "parametros": {}}
-
-"k camion tengo"
-{"intencion": "consultar_vehiculo", "texto_corregido": "Qué camión tengo?", "confianza": 0.95, "parametros": {}}
-
-"que tractora tengo"
-{"intencion": "consultar_vehiculo", "texto_corregido": "Qué tractora tengo?", "confianza": 0.95, "parametros": {}}
-
-"k tractora tngo"
-{"intencion": "consultar_vehiculo", "texto_corregido": "Qué tractora tengo?", "confianza": 0.95, "parametros": {}}
-
-"mi vehiculo"
-{"intencion": "consultar_vehiculo", "texto_corregido": "Mi vehículo", "confianza": 0.95, "parametros": {}}
-
-"mi remolque"
-{"intencion": "consultar_vehiculo", "texto_corregido": "Mi remolque", "confianza": 0.95, "parametros": {}}
-
-"que remolque llevo"
-{"intencion": "consultar_vehiculo", "texto_corregido": "Qué remolque llevo?", "confianza": 0.95, "parametros": {}}
-
-"mi matricula"
-{"intencion": "consultar_vehiculo", "texto_corregido": "Mi matrícula", "confianza": 0.95, "parametros": {}}
-
-"cual es mi matricula"
-{"intencion": "consultar_vehiculo", "texto_corregido": "Cuál es mi matrícula?", "confianza": 0.95, "parametros": {}}
-
-========================================
-EJEMPLOS DE CLIMA:
-========================================
-
-"que tiempo hace"
-{"intencion": "consultar_clima", "texto_corregido": "Qué tiempo hace?", "confianza": 0.95, "parametros": {}}
-
-"k tiempo hace"
-{"intencion": "consultar_clima", "texto_corregido": "Qué tiempo hace?", "confianza": 0.95, "parametros": {}}
-
-"que tiempo hace en madrid"
-{"intencion": "consultar_clima", "texto_corregido": "Qué tiempo hace en Madrid?", "confianza": 0.95, "parametros": {"ciudad": "Madrid"}}
-
-"tiempo en barcelona"
-{"intencion": "consultar_clima", "texto_corregido": "Tiempo en Barcelona", "confianza": 0.95, "parametros": {"ciudad": "Barcelona"}}
-
-"clima en zaragoza"
-{"intencion": "consultar_clima", "texto_corregido": "Clima en Zaragoza", "confianza": 0.95, "parametros": {"ciudad": "Zaragoza"}}
-
-"llueve"
-{"intencion": "consultar_clima", "texto_corregido": "Llueve?", "confianza": 0.95, "parametros": {}}
-
-"llueve en madrid"
-{"intencion": "consultar_clima", "texto_corregido": "Llueve en Madrid?", "confianza": 0.95, "parametros": {"ciudad": "Madrid"}}
-
-"hace frio"
-{"intencion": "consultar_clima", "texto_corregido": "Hace frío?", "confianza": 0.95, "parametros": {}}
-
-========================================
-EJEMPLOS DE UBICACIÓN:
-========================================
-
 "donde estoy"
-{"intencion": "consultar_ubicacion", "texto_corregido": "Dónde estoy?", "confianza": 0.95, "parametros": {}}
-
-"dnd estoy"
 {"intencion": "consultar_ubicacion", "texto_corregido": "Dónde estoy?", "confianza": 0.95, "parametros": {}}
 
 "mi posicion"
 {"intencion": "consultar_ubicacion", "texto_corregido": "Mi posición", "confianza": 0.95, "parametros": {}}
 
-"mi ubicacion"
-{"intencion": "consultar_ubicacion", "texto_corregido": "Mi ubicación", "confianza": 0.95, "parametros": {}}
-
-========================================
-EJEMPLOS DE SALUDOS:
-========================================
-
 "hola"
-{"intencion": "saludar", "texto_corregido": "Hola", "confianza": 0.99, "parametros": {}}
-
-"ola"
-{"intencion": "saludar", "texto_corregido": "Hola", "confianza": 0.99, "parametros": {}}
+{"intencion": "saludar", "texto_corregido": "Hola", "confianza": 0.95, "parametros": {}}
 
 "buenas"
-{"intencion": "saludar", "texto_corregido": "Buenas", "confianza": 0.99, "parametros": {}}
-
-"buenass"
-{"intencion": "saludar", "texto_corregido": "Buenas", "confianza": 0.99, "parametros": {}}
-
-"wenas"
-{"intencion": "saludar", "texto_corregido": "Buenas", "confianza": 0.99, "parametros": {}}
-
-"buenos dias"
-{"intencion": "saludar", "texto_corregido": "Buenos días", "confianza": 0.99, "parametros": {}}
-
-"que tal"
-{"intencion": "saludar", "texto_corregido": "Qué tal", "confianza": 0.99, "parametros": {}}
-
-"k tal"
-{"intencion": "saludar", "texto_corregido": "Qué tal", "confianza": 0.99, "parametros": {}}
-
-"ola k tal"
-{"intencion": "saludar", "texto_corregido": "Hola qué tal", "confianza": 0.99, "parametros": {}}
-
-========================================
-EJEMPLOS DE DESPEDIDAS:
-========================================
+{"intencion": "saludar", "texto_corregido": "Buenas", "confianza": 0.95, "parametros": {}}
 
 "adios"
-{"intencion": "despedir", "texto_corregido": "Adiós", "confianza": 0.99, "parametros": {}}
+{"intencion": "despedir", "texto_corregido": "Adiós", "confianza": 0.95, "parametros": {}}
 
 "gracias"
-{"intencion": "despedir", "texto_corregido": "Gracias", "confianza": 0.99, "parametros": {}}
-
-"hasta luego"
-{"intencion": "despedir", "texto_corregido": "Hasta luego", "confianza": 0.99, "parametros": {}}
-
-"vale gracias"
-{"intencion": "despedir", "texto_corregido": "Vale, gracias", "confianza": 0.99, "parametros": {}}
-
-========================================
-EJEMPLOS DE TRÁFICO:
-========================================
-
-"hay trafico"
-{"intencion": "consultar_trafico", "texto_corregido": "Hay tráfico?", "confianza": 0.95, "parametros": {}}
-
-"como esta el trafico"
-{"intencion": "consultar_trafico", "texto_corregido": "Cómo está el tráfico?", "confianza": 0.95, "parametros": {}}
-
-"hay atasco"
-{"intencion": "consultar_trafico", "texto_corregido": "Hay atasco?", "confianza": 0.95, "parametros": {}}
-
-"trafico en madrid"
-{"intencion": "consultar_trafico", "texto_corregido": "Tráfico en Madrid", "confianza": 0.95, "parametros": {"ciudad": "Madrid"}}
-
-========================================
-EJEMPLOS DE HORARIO:
-========================================
-
-"mi horario"
-{"intencion": "consultar_horario", "texto_corregido": "Mi horario", "confianza": 0.95, "parametros": {}}
-
-"a que hora empiezo"
-{"intencion": "consultar_horario", "texto_corregido": "A qué hora empiezo?", "confianza": 0.95, "parametros": {}}
-
-"a k ora empiezo"
-{"intencion": "consultar_horario", "texto_corregido": "A qué hora empiezo?", "confianza": 0.95, "parametros": {}}
-
-"cuando salgo"
-{"intencion": "consultar_horario", "texto_corregido": "Cuándo salgo?", "confianza": 0.95, "parametros": {}}
-
-========================================
-EJEMPLOS DE RESUMEN:
-========================================
+{"intencion": "despedir", "texto_corregido": "Gracias", "confianza": 0.95, "parametros": {}}
 
 "resumen"
 {"intencion": "consultar_resumen", "texto_corregido": "Resumen", "confianza": 0.95, "parametros": {}}
-
-"mi resumen"
-{"intencion": "consultar_resumen", "texto_corregido": "Mi resumen", "confianza": 0.95, "parametros": {}}
-
-"que tengo hoy"
-{"intencion": "consultar_resumen", "texto_corregido": "Qué tengo hoy?", "confianza": 0.95, "parametros": {}}
-
-"k tngo oy"
-{"intencion": "consultar_resumen", "texto_corregido": "Qué tengo hoy?", "confianza": 0.95, "parametros": {}}
 """
 
 
@@ -541,17 +428,35 @@ def interpretar_mensaje(mensaje: str) -> dict:
         }
 
 
+# Lista de intenciones que requieren acción especial (gestiones)
+INTENCIONES_GESTIONES = [
+    'añadir_conductor',
+    'añadir_viaje', 
+    'modificar_conductor',
+    'modificar_viaje',
+    'menu_gestiones',
+    'modificar_viaje_ruta',
+]
+
+
+def es_intencion_gestion(intencion: str) -> bool:
+    """Devuelve True si la intención es de gestiones"""
+    return intencion in INTENCIONES_GESTIONES
+
+
 if __name__ == "__main__":
     # Test rápido
     mensajes = [
+        "quiero añadir un conductor",
+        "añadir viaje",
+        "modificar conductor",
+        "editar viaje",
+        "gestiones",
         "necesito repostar",
-        "necesito echar gasoil",
-        "tengo k echar diesel",
-        "dnd hay gasolineras",
-        "k viajes tngo",
-        "ola k tal"
+        "mis viajes",
+        "hola"
     ]
     
     for msg in mensajes:
         r = interpretar_mensaje(msg)
-        print(f"'{msg}' -> {r['intencion']}")
+        print(f"'{msg}' -> {r['intencion']} (gestion={es_intencion_gestion(r['intencion'])})")

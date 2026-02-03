@@ -1,7 +1,7 @@
 """
 INTELIGENCIA DUAL - GPT + SQL
 ==============================
-Version 10.0 - Gasolineras en ruta inteligentes + Disponibilidad conductor
+Version 11.0 - Con soporte para GESTIONES por lenguaje natural
 """
 
 import os
@@ -12,10 +12,10 @@ import threading
 import urllib.parse
 import random
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from openai import OpenAI
 from dotenv import load_dotenv
-from interprete_gpt import interpretar_mensaje
+from interprete_gpt import interpretar_mensaje, es_intencion_gestion, INTENCIONES_GESTIONES
 from apis_externas import obtener_gasolineras, obtener_gasolineras_en_ruta, calcular_distancia_km
 
 load_dotenv()
@@ -117,7 +117,7 @@ class InteligenciaDual:
     def __init__(self, db_path: str, movildata_api=None):
         self.db_path = db_path
         self.movildata = movildata_api
-        logger.info("[OK] Inteligencia Dual v10 inicializada")
+        logger.info("[OK] Inteligencia Dual v11 inicializada (con gestiones)")
     
     def _query(self, query: str, params: tuple = (), fetch_one: bool = False):
         try:
@@ -198,63 +198,54 @@ class InteligenciaDual:
                 
                 if dist_a_carga < dist_a_descarga and dist_a_carga > 5:
                     ruta["tiene_ruta"] = True
-                    ruta["destino_lat"], ruta["destino_lon"] = coords_carga
+                    ruta["destino_lat"] = coords_carga[0]
+                    ruta["destino_lon"] = coords_carga[1]
                     ruta["destino_nombre"] = lugar_carga
                 elif dist_a_descarga > 5:
                     ruta["tiene_ruta"] = True
-                    ruta["destino_lat"], ruta["destino_lon"] = coords_descarga
+                    ruta["destino_lat"] = coords_descarga[0]
+                    ruta["destino_lon"] = coords_descarga[1]
                     ruta["destino_nombre"] = lugar_descarga
         
         return ruta
     
     def _formatear_viaje_detallado(self, viaje: Dict, indice: int = 0, es_admin: bool = False) -> str:
+        """Formatea un viaje con todos los detalles"""
         cliente = viaje.get('cliente', 'N/A')
-        mercancia = viaje.get('mercancia', 'N/A')
-        precio = viaje.get('precio', 0)
-        km = viaje.get('km', 0)
+        mercancia = viaje.get('tipo_mercancia', viaje.get('mercancia', 'N/A'))
+        lugar_carga = viaje.get('lugar_carga', 'N/A')
+        lugar_descarga = viaje.get('lugar_entrega', viaje.get('lugar_descarga', 'N/A'))
+        km = viaje.get('km', 'N/A')
         observaciones = viaje.get('observaciones', '')
         
-        lugar_carga = viaje.get('lugar_carga', '')
-        direccion_carga = viaje.get('direccion_carga', '')
-        lugar_entrega = viaje.get('lugar_entrega', '')
-        direccion_descarga = viaje.get('direccion_descarga', '')
+        dir_carga = viaje.get('direccion_carga', '')
+        dir_descarga = viaje.get('direccion_descarga', '')
         
         horarios = simular_horarios(viaje, indice)
         
-        respuesta = f"📦 MERCANCÍA: {mercancia}\n"
-        if es_admin and precio:
-            respuesta += f"💰 {precio}€ | "
-        if km:
-            respuesta += f"📏 {km}km"
-        respuesta += "\n"
-        
-        # CARGA
-        respuesta += f"\n{'━'*30}\n📥 CARGA - {cliente}\n{'━'*30}\n"
-        dir_carga = direccion_carga if direccion_carga and direccion_carga.lower() not in ['nan', 'none', ''] else lugar_carga
+        respuesta = f"🏢 Cliente: {cliente}\n📦 Mercancía: {mercancia}\n\n"
+        respuesta += f"📍 CARGA: {lugar_carga}\n"
+        respuesta += f"   📅 {horarios['fecha_carga']} ⏰ {horarios['hora_carga']}\n"
         if dir_carga:
-            respuesta += f"📍 {dir_carga}\n📅 {horarios['fecha_carga']} a las {horarios['hora_carga']}\n"
-            respuesta += f"🗺️ Maps: {generar_link_maps(dir_carga)}\n🚗 Waze: {generar_link_waze(dir_carga)}\n"
+            respuesta += f"   🗺️ [Maps]({generar_link_maps(dir_carga)}) | [Waze]({generar_link_waze(dir_carga)})\n"
         
-        # DESCARGA
-        respuesta += f"\n{'━'*30}\n📤 DESCARGA\n{'━'*30}\n"
-        dir_descarga = direccion_descarga if direccion_descarga and direccion_descarga.lower() not in ['nan', 'none', ''] else lugar_entrega
+        respuesta += f"\n📍 DESCARGA: {lugar_descarga}\n"
+        respuesta += f"   📅 {horarios['fecha_descarga']} ⏰ {horarios['hora_descarga']}\n"
         if dir_descarga:
-            respuesta += f"📍 {dir_descarga}\n📅 {horarios['fecha_descarga']} a las {horarios['hora_descarga']}\n"
-            respuesta += f"🗺️ Maps: {generar_link_maps(dir_descarga)}\n🚗 Waze: {generar_link_waze(dir_descarga)}\n"
+            respuesta += f"   🗺️ [Maps]({generar_link_maps(dir_descarga)}) | [Waze]({generar_link_waze(dir_descarga)})\n"
         
-        if observaciones and str(observaciones).lower() not in ['nan', 'none', '']:
-            respuesta += f"\n📝 NOTAS: {observaciones}"
+        respuesta += f"\n📏 Distancia: {km} km"
+        
+        if es_admin and viaje.get('precio'):
+            respuesta += f" | 💰 {viaje['precio']}€"
+        
+        if observaciones:
+            respuesta += f"\n📝 Obs: {observaciones[:100]}"
         
         return respuesta
     
     def _buscar_gasolineras_inteligente(self, conductor: Dict, tractora: str, es_admin: bool = False) -> str:
-        """
-        Busca gasolineras de forma inteligente:
-        1. Detecta si tiene viaje asignado
-        2. Calcula la ruta
-        3. Busca gasolineras EN RUTA
-        4. Añade aviso de descanso si es necesario
-        """
+        """Busca gasolineras de forma inteligente"""
         nombre = conductor.get('nombre', '')
         viajes = self.obtener_mis_viajes(nombre)
         estado = self._obtener_estado_conductor(tractora)
@@ -262,7 +253,6 @@ class InteligenciaDual:
         
         respuesta = ""
         
-        # Añadir aviso de descanso si es necesario
         if estado.get("necesita_descanso_pronto"):
             minutos = estado.get("minutos_hasta_descanso", 0)
             respuesta += f"⚠️ ATENCIÓN: Descanso obligatorio en {minutos} minutos\n\n"
@@ -270,7 +260,6 @@ class InteligenciaDual:
             minutos = estado["minutos_hasta_descanso"]
             respuesta += f"⏰ Recuerda: Descanso en {minutos} minutos\n\n"
         
-        # Si tiene ruta definida, buscar en ruta
         if ruta["tiene_ruta"] and ruta["origen_lat"] and ruta["destino_lat"]:
             try:
                 resultado = run_async(obtener_gasolineras_en_ruta(
@@ -284,7 +273,6 @@ class InteligenciaDual:
             except Exception as e:
                 logger.error(f"Error gasolineras en ruta: {e}")
         
-        # Si no hay ruta, buscar por provincia
         provincia = estado.get("provincia") or conductor.get("ubicacion", "")
         if provincia:
             mapeo = {'AZAGRA': 'Navarra', 'TUDELA': 'Navarra', 'CALAHORRA': 'La Rioja', 
@@ -305,7 +293,21 @@ class InteligenciaDual:
         
         return respuesta + "⛽ No pude encontrar gasolineras. Indica una provincia: 'gasolineras en Navarra'"
     
-    def responder(self, telegram_id: int, mensaje: str, conductor: Dict, es_admin: bool = False) -> str:
+    def responder(self, telegram_id: int, mensaje: str, conductor: Dict, es_admin: bool = False) -> Tuple[str, Optional[str]]:
+        """
+        Responde al mensaje del usuario.
+        
+        Returns:
+            Tuple[str, Optional[str]]: (respuesta_texto, accion_especial)
+            
+            accion_especial puede ser:
+            - None: respuesta normal
+            - 'añadir_conductor': iniciar flujo añadir conductor
+            - 'añadir_viaje': iniciar flujo añadir viaje
+            - 'modificar_conductor': iniciar flujo modificar conductor
+            - 'modificar_viaje': iniciar flujo modificar viaje
+            - 'menu_gestiones': mostrar menú de gestiones
+        """
         interpretacion = interpretar_mensaje(mensaje)
         intencion = interpretacion.get('intencion', 'no_entendido')
         parametros = interpretacion.get('parametros', {})
@@ -316,29 +318,46 @@ class InteligenciaDual:
         nombre = conductor.get('nombre', '')
         tractora = conductor.get('tractora', '')
         
-        # SALUDOS
+        # === GESTIONES (solo admin) ===
+        if es_intencion_gestion(intencion):
+            if not es_admin:
+                return ("⚠️ Esta función solo está disponible para administradores.", None)
+            
+            # Devolver la acción especial para que el bot inicie el flujo
+            if intencion == 'añadir_conductor':
+                return ("🚛 Vamos a añadir un nuevo conductor...", 'añadir_conductor')
+            elif intencion == 'añadir_viaje':
+                return ("📦 Vamos a crear un nuevo viaje...", 'añadir_viaje')
+            elif intencion == 'modificar_conductor':
+                return ("✏️ Vamos a modificar un conductor...", 'modificar_conductor')
+            elif intencion == 'modificar_viaje':
+                return ("✏️ Vamos a modificar un viaje...", 'modificar_viaje')
+            elif intencion == 'menu_gestiones':
+                return ("🛠️ Abriendo menú de gestiones...", 'menu_gestiones')
+        
+        # === SALUDOS ===
         if intencion == 'saludar':
             nombre_corto = nombre.split()[0] if nombre else 'compañero'
             perfil = "👔 Responsable" if es_admin else "🚛 Conductor"
-            return f"👋 ¡Hola {nombre_corto}! ({perfil})\n¿Qué necesitas?"
+            return (f"👋 ¡Hola {nombre_corto}! ({perfil})\n¿Qué necesitas?", None)
         
         if intencion == 'despedir':
-            return "👋 ¡Hasta luego! Buen viaje 🛣️"
+            return ("👋 ¡Hasta luego! Buen viaje 🛣️", None)
         
-        # MI VEHÍCULO
+        # === MI VEHÍCULO ===
         if intencion == 'consultar_vehiculo':
             respuesta = f"🚛 TU CAMIÓN\n\nTractora: {tractora or 'N/A'}\nRemolque: {conductor.get('remolque', 'N/A')}\nBase: {conductor.get('ubicacion', 'N/A')}"
             if self.movildata and tractora:
                 pos = self.movildata.get_last_location_plate(tractora)
                 if pos:
                     respuesta += f"\n\n📡 GPS: {pos.get('municipio', 'N/A')} | {pos.get('velocidad', 0)} km/h"
-            return respuesta
+            return (respuesta, None)
         
-        # MIS VIAJES
+        # === MIS VIAJES ===
         if intencion in ['consultar_viajes', 'proxima_entrega']:
             viajes = self.obtener_mis_viajes(nombre)
             if not viajes:
-                return "📦 No tienes viajes asignados."
+                return ("📦 No tienes viajes asignados.", None)
             
             respuesta = f"🚛 TUS VIAJES ({len(viajes)})\n"
             for i, v in enumerate(viajes[:3]):
@@ -347,44 +366,48 @@ class InteligenciaDual:
             
             if len(viajes) > 3:
                 respuesta += f"\n\n📋 Tienes {len(viajes)-3} viaje(s) más."
-            return respuesta
+            return (respuesta, None)
         
-        # MI UBICACIÓN
+        # === MI UBICACIÓN ===
         if intencion == 'consultar_ubicacion':
             if self.movildata and tractora:
                 pos = self.movildata.get_last_location_plate(tractora)
                 if pos:
-                    return f"📍 TU POSICIÓN\n\n🚛 {tractora}\n📍 {pos.get('municipio', 'N/A')}, {pos.get('provincia', 'N/A')}\n🏎️ {pos.get('velocidad', 0)} km/h"
-            return f"📍 Base: {conductor.get('ubicacion', 'N/A')}"
+                    return (f"📍 TU POSICIÓN\n\n🚛 {tractora}\n📍 {pos.get('municipio', 'N/A')}, {pos.get('provincia', 'N/A')}\n🏎️ {pos.get('velocidad', 0)} km/h", None)
+            return (f"📍 Base: {conductor.get('ubicacion', 'N/A')}", None)
         
-        # GASOLINERAS - INTELIGENTE
+        # === GASOLINERAS ===
         if intencion == 'consultar_gasolineras':
             provincia_solicitada = parametros.get('ciudad', '') or parametros.get('provincia', '')
             
-            # Si pide una provincia específica
             if provincia_solicitada:
                 try:
                     resultado = run_async(obtener_gasolineras(provincia_solicitada, mostrar_precio=es_admin))
-                    return resultado
+                    return (resultado, None)
                 except Exception as e:
                     logger.error(f"Error gasolineras: {e}")
-                    return f"⛽ Error al buscar en {provincia_solicitada}"
+                    return (f"⛽ Error al buscar en {provincia_solicitada}", None)
             
-            # Si no, buscar de forma inteligente
-            return self._buscar_gasolineras_inteligente(conductor, tractora, es_admin)
+            return (self._buscar_gasolineras_inteligente(conductor, tractora, es_admin), None)
         
-        # RESUMEN
+        # === RESUMEN ===
         if intencion == 'consultar_resumen':
             if es_admin:
                 viajes_total = len(self.obtener_todos_viajes())
                 conductores = len(self.obtener_conductores())
-                return f"📊 RESUMEN GENERAL\n\n👥 Conductores: {conductores}\n📦 Viajes: {viajes_total}"
+                return (f"📊 RESUMEN GENERAL\n\n👥 Conductores: {conductores}\n📦 Viajes: {viajes_total}", None)
             else:
                 viajes = self.obtener_mis_viajes(nombre)
-                return f"📊 TU RESUMEN\n\n👤 {nombre}\n🚛 {tractora or 'N/A'}\n📦 Viajes: {len(viajes)}"
+                return (f"📊 TU RESUMEN\n\n👤 {nombre}\n🚛 {tractora or 'N/A'}\n📦 Viajes: {len(viajes)}", None)
         
-        # NO ENTENDIDO → CHAT LIBRE
+        # === NO ENTENDIDO → CHAT LIBRE ===
         if intencion == 'no_entendido' or confianza < 0.5:
-            return chat_libre(mensaje, nombre)
+            return (chat_libre(mensaje, nombre), None)
         
-        return chat_libre(mensaje, nombre)
+        return (chat_libre(mensaje, nombre), None)
+    
+    # Método legacy para compatibilidad (sin tupla)
+    def responder_simple(self, telegram_id: int, mensaje: str, conductor: Dict, es_admin: bool = False) -> str:
+        """Versión simple que solo devuelve texto (para compatibilidad)"""
+        respuesta, _ = self.responder(telegram_id, mensaje, conductor, es_admin)
+        return respuesta

@@ -1,7 +1,10 @@
 """
-TECLADOS - BOTONES RÁPIDOS v2.1
+TECLADOS - BOTONES RÁPIDOS v2.2
 ================================
 Teclados con botones para conductores y admins.
+
+Cambios v2.2:
+- Añadido botón "🔄 Modificar viaje en ruta" para admin
 
 Cambios v2.1:
 - Añadido botón "📋 Consultar rutas" para admin
@@ -32,7 +35,7 @@ teclado_conductor = ReplyKeyboardMarkup(
 
 
 # ============================================================
-# TECLADO ADMIN (con Consultar rutas)
+# TECLADO ADMIN (con Modificar viaje en ruta)
 # ============================================================
 
 BOTONES_ADMIN = [
@@ -40,6 +43,7 @@ BOTONES_ADMIN = [
     ["👥 Conductores", "🗺️ Estado de la flota"],
     ["📋 Consultar rutas", "📊 Estadísticas"],
     ["📈 Informe semanal", "💰 Rentabilidad"],
+    ["🔄 Modificar viaje en ruta"],  # NUEVO
     ["🔄 Sincronizar", "🛠️ Gestiones"]
 ]
 
@@ -103,6 +107,7 @@ MAPEO_BOTONES = {
     "💰 Rentabilidad": "rentabilidad",
     "🔄 Sincronizar": "sync",
     "🛠️ Gestiones": "gestiones",
+    "🔄 Modificar viaje en ruta": "modificar_viaje_ruta",  # NUEVO
     
     # No vinculado
     "🔗 Vincularme": "vincular",

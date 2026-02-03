@@ -20,6 +20,7 @@ from telegram.ext import (
 import openpyxl
 from openpyxl.comments import Comment
 from pathlib import Path
+from teclados import teclado_admin
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,10 @@ class GestionesManager:
             entry_points=[
                 MessageHandler(filters.Regex("^🛠️ Gestiones$"), self.inicio),
                 CommandHandler("gestiones", self.inicio),
+                CommandHandler("anadir_conductor", self.inicio_añadir_conductor),
+                CommandHandler("anadir_viaje", self.inicio_añadir_viaje),
+                CommandHandler("modificar_conductor", self.inicio_modificar_conductor),
+                CommandHandler("modificar_viaje", self.inicio_modificar_viaje),
             ],
             states={
                 MENU_PRINCIPAL: [
@@ -352,6 +357,46 @@ class GestionesManager:
         )
         return MENU_PRINCIPAL
     
+    async def inicio_añadir_conductor(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Inicia directamente añadir conductor"""
+        user = update.effective_user
+        if not self.es_admin(user.id):
+            await update.message.reply_text("❌ Solo administradores.")
+            return ConversationHandler.END
+        context.user_data.clear()
+        context.user_data['tipo'] = 'camionero'
+        return await self.cam_inicio(update, context)
+    
+    async def inicio_añadir_viaje(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Inicia directamente añadir viaje"""
+        user = update.effective_user
+        if not self.es_admin(user.id):
+            await update.message.reply_text("❌ Solo administradores.")
+            return ConversationHandler.END
+        context.user_data.clear()
+        context.user_data['tipo'] = 'viaje'
+        return await self.via_inicio(update, context)
+    
+    async def inicio_modificar_conductor(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Inicia directamente modificar conductor"""
+        user = update.effective_user
+        if not self.es_admin(user.id):
+            await update.message.reply_text("❌ Solo administradores.")
+            return ConversationHandler.END
+        context.user_data.clear()
+        context.user_data['tipo'] = 'camionero'
+        return await self.mod_listar_camioneros(update, context)
+    
+    async def inicio_modificar_viaje(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Inicia directamente modificar viaje"""
+        user = update.effective_user
+        if not self.es_admin(user.id):
+            await update.message.reply_text("❌ Solo administradores.")
+            return ConversationHandler.END
+        context.user_data.clear()
+        context.user_data['tipo'] = 'viaje'
+        return await self.mod_listar_viajes(update, context)
+
     async def menu_camionero(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Menú de camionero"""
         context.user_data['tipo'] = 'camionero'
@@ -1683,7 +1728,30 @@ class GestionesManager:
     # ============================================================
     
     async def cancelar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Cancela la operación"""
+        """Cancela la operación y devuelve el teclado de admin"""
         context.user_data.clear()
-        await update.message.reply_text("❌ Operación cancelada", reply_markup=ReplyKeyboardRemove())
+        
+        from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove
+        
+        # Primero quitamos el teclado actual
+        await update.message.reply_text(
+            "❌ Cancelando...",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        
+        # Luego enviamos el teclado de admin
+        teclado = ReplyKeyboardMarkup([
+            ["🤖 Asignar viajes", "📦 Todos los viajes"],
+            ["👥 Conductores", "🗺️ Estado de la flota"],
+            ["📋 Consultar rutas", "📊 Estadísticas"],
+            ["📈 Informe semanal", "💰 Rentabilidad"],
+            ["🔄 Modificar viaje en ruta"],
+            ["🔄 Sincronizar", "🛠️ Gestiones"]
+        ], resize_keyboard=True)
+        
+        await update.message.reply_text(
+            "✅ Operación cancelada.\n\n¿Qué más necesitas?",
+            reply_markup=teclado
+        )
+        
         return ConversationHandler.END

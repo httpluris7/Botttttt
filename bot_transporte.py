@@ -27,6 +27,7 @@ CAMBIOS v2.1:
 - Gasolineras ordenadas por cercanía
 - Encadenamiento inteligente de viajes
 """
+from turtle import update
 import urllib.parse
 import random
 from datetime import datetime, timedelta
@@ -63,6 +64,10 @@ from generador_direcciones import sincronizar_direcciones
 from notificaciones_viajes import inicializar_notificador, obtener_notificador
 from asignador_viajes import inicializar_asignador, obtener_asignador
 from gestiones_manager import GestionesManager
+from modificador_viajes_ruta import ModificadorViajesRuta
+
+gestiones_manager = None
+modificador_ruta = None
 
 EQUIVALENCIAS_DISTANCIA = [
     (500, "Pamplona - Madrid"),
@@ -1768,6 +1773,8 @@ async def mensaje_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await sync(update, context)
         elif accion == "consultar_rutas":
             return await consultar_rutas(update, context)
+        elif accion == "modificar_viaje_ruta":
+            return await modificador_ruta.inicio(update, context)   
         elif accion == "informe_semanal":
             return await cmd_informe_semanal(update, context)
         elif accion == "rentabilidad":
@@ -1776,7 +1783,8 @@ async def mensaje_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 "Para vincularte usa:\n/vincular TU_NOMBRE\n\nEjemplo: /vincular LUIS ARNALDO"
             )
-            return
+         
+        return
     
     # Botón "Comenzar" para nuevos usuarios
     if texto == "🚀 Comenzar":
@@ -1785,6 +1793,39 @@ async def mensaje_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conductor = db.obtener_conductor(user.id)
     
     if not conductor:
+        # Si es admin, puede usar inteligencia sin estar vinculado
+        if admin and inteligencia:
+            conductor = {"nombre": "Admin", "tractora": "", "remolque": "", "ubicacion": ""}
+            respuesta, accion = inteligencia.responder(user.id, texto, conductor, admin)
+            
+            if accion:
+                await update.message.reply_text(respuesta)
+                if accion == 'menu_gestiones':
+                    return await gestiones_manager.inicio(update, context)
+                elif accion == 'añadir_conductor':
+                    return await gestiones_manager.inicio_añadir_conductor(update, context)
+                elif accion == 'añadir_viaje':
+                    return await gestiones_manager.inicio_añadir_viaje(update, context)
+                elif accion == 'modificar_conductor':
+                    return await gestiones_manager.inicio_modificar_conductor(update, context)
+                elif accion == 'modificar_viaje':
+                    return await gestiones_manager.inicio_modificar_viaje(update, context)
+                return
+            
+            from teclados import obtener_teclado
+
+# ... dentro de la función mensaje_texto ...
+
+            teclado = obtener_teclado(es_admin=admin, esta_vinculado=True)
+            await update.message.reply_text(
+                respuesta, 
+                parse_mode='Markdown', 
+                disable_web_page_preview=True,
+                reply_markup=teclado
+            )
+            return
+        
+        # Usuario normal no vinculado
         nombres = db.obtener_nombres_conductores()
         if texto in nombres or texto == "❌ No estoy en la lista":
             await seleccion_nombre(update, context)
@@ -1794,12 +1835,39 @@ async def mensaje_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     if inteligencia:
-        respuesta = inteligencia.responder(user.id, texto, conductor, admin)
-        await update.message.reply_text(respuesta)
+        respuesta, accion = inteligencia.responder(user.id, texto, conductor, admin)
+        
+        # Si detectó una intención de gestión (solo admin)
+        if accion and admin:
+            await update.message.reply_text(respuesta)
+            
+            if accion == 'menu_gestiones':
+                return await gestiones_manager.inicio(update, context)
+            elif accion == 'añadir_conductor':
+                return await gestiones_manager.inicio_añadir_conductor(update, context)
+            elif accion == 'añadir_viaje':
+                return await gestiones_manager.inicio_añadir_viaje(update, context)
+            elif accion == 'modificar_conductor':
+                return await gestiones_manager.inicio_modificar_conductor(update, context)
+            elif accion == 'modificar_viaje':
+                return await gestiones_manager.inicio_modificar_viaje(update, context)
+            elif accion == 'modificar_viaje_ruta':
+                return await modificador_ruta.inicio(update, context)
+            return
+        
+        # Respuesta normal CON TECLADO
+        teclado = obtener_teclado(es_admin=admin, esta_vinculado=True)
+        await update.message.reply_text(
+            respuesta, 
+            parse_mode='Markdown', 
+            disable_web_page_preview=True,
+            reply_markup=teclado
+        )
     else:
-        await update.message.reply_text("Usa /ayuda para ver comandos.")
-
-
+        teclado = obtener_teclado(es_admin=admin, esta_vinculado=True)
+        await update.message.reply_text("Usa /ayuda para ver comandos.", reply_markup=teclado)
+    
+    # Si detectó una intención de gestión (solo admin)
 # ============================================================
 # SYNC AUTOMÁTICA
 # ============================================================
@@ -1930,8 +1998,20 @@ def main():
     app.add_handler(MessageHandler(filters.CONTACT, recibir_contacto))
     
     # Handler para gestiones (camioneros y viajes)
+    global gestiones_manager
     gestiones_manager = GestionesManager(config.EXCEL_EMPRESA, config.DB_PATH, es_admin, subir_excel_a_drive)
     app.add_handler(gestiones_manager.get_conversation_handler())
+    # Modificador de viajes en ruta
+    global modificador_ruta
+    modificador_ruta = ModificadorViajesRuta(
+        excel_path=config.EXCEL_EMPRESA,
+        db_path=config.DB_PATH,
+        es_admin_func=es_admin,
+        subir_drive_func=subir_excel_a_drive,
+        bot=app.bot,
+        movildata_api=movildata_api
+    )
+    app.add_handler(modificador_ruta.get_conversation_handler())
     logger.info("✅ Gestiones manager")
     
     # Handlers para callbacks de rutas (ADMIN)
