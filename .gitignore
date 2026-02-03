@@ -1,0 +1,7 @@
+.env
+token.pickle
+token_base64.txt
+credentials.json
+*.db
+bot.log
+__pycache__/
