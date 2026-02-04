@@ -190,7 +190,7 @@ async def obtener_clima(ciudad: str, api_key: str = "") -> str:
             "lang": "es"
         }
         
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=10, verify=False)
         data = response.json()
         
         if response.status_code == 200:
@@ -515,7 +515,7 @@ async def obtener_trafico(zona: str, api_key: str = "") -> str:
         url = f"https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json"
         params = {"key": api_key, "point": f"{lat},{lon}"}
         
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=10, verify=False)
         data = response.json()
         
         if response.status_code == 200:
