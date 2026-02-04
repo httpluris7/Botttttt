@@ -1346,7 +1346,10 @@ class GestionesManager:
             celda_ref_km = ws.cell(row=3, column=24)
             celda_km.number_format = celda_ref_km.number_format
             
-            ws.cell(row=fila, column=25, value=f"=W{fila}/X{fila}")
+            # €/KM: Fórmula + copiar formato
+            celda_ratio = ws.cell(row=fila, column=25, value=f"=W{fila}/X{fila}")
+            celda_ref_ratio = ws.cell(row=3, column=25)
+            celda_ratio.number_format = celda_ref_ratio.number_format
             
             # Observaciones: incluir zona y cargas/descargas adicionales
             observaciones = f"ZONA: {via.get('zona', '')}"
