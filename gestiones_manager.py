@@ -1179,7 +1179,6 @@ class GestionesManager:
             return VIA_PRECIO
         
         context.user_data['viaje']['precio'] = resultado['valor']
-        context.user_data['viaje']['precio_excel'] = resultado['valor_excel']
         
         return await self.via_mostrar_resumen(update, context)
     
@@ -1327,11 +1326,26 @@ class GestionesManager:
             
             ws.cell(row=fila, column=20, value=via.get('mercancia'))
             
-            # PRECIO CON FORMATO EXCEL (956.00€)
-            precio_excel = via.get('precio_excel', f"{via.get('precio', 0):.2f}€")
-            ws.cell(row=fila, column=23, value=precio_excel)
+            # PRECIO: Copiar formato de fila 3 (número + formato de celda)
+            precio_valor = int(via.get('precio', 0))  # Guardar como número entero
+            celda_precio = ws.cell(row=fila, column=23, value=precio_valor)
+            # Copiar formato de la fila 3
+            celda_ref_precio = ws.cell(row=3, column=23)
+            celda_precio.number_format = celda_ref_precio.number_format
+            if celda_ref_precio.font:
+                from openpyxl.styles import Font
+                celda_precio.font = Font(
+                    bold=celda_ref_precio.font.bold,
+                    name=celda_ref_precio.font.name,
+                    size=celda_ref_precio.font.size
+                )
             
-            ws.cell(row=fila, column=24, value=via.get('km'))
+            # KM: Copiar formato de fila 3
+            km_valor = int(via.get('km', 0))  # Guardar como número entero
+            celda_km = ws.cell(row=fila, column=24, value=km_valor)
+            celda_ref_km = ws.cell(row=3, column=24)
+            celda_km.number_format = celda_ref_km.number_format
+            
             ws.cell(row=fila, column=25, value=f"=W{fila}/X{fila}")
             
             # Observaciones: incluir zona y cargas/descargas adicionales
@@ -1358,7 +1372,7 @@ class GestionesManager:
             
             drive_ok = self._sync_to_drive()
             
-            mensaje = f"✅ *¡VIAJE AÑADIDO!*\n\n🏢 {via.get('cliente')}\n📍 {carga_str} → {descarga_str}\n💰 {precio_excel}\n\n"
+            mensaje = f"✅ *¡VIAJE AÑADIDO!*\n\n🏢 {via.get('cliente')}\n📍 {carga_str} → {descarga_str}\n💰 {via.get('precio', 0):.0f}€\n\n"
             mensaje += "☁️ _Sincronizado con Drive_" if drive_ok else "⚠️ _Guardado local_"
             
             await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())

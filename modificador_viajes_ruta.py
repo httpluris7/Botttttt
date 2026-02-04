@@ -214,38 +214,39 @@ class ModificadorViajesRuta:
     def _detectar_formato_columna(self, ws, columna: int) -> dict:
         """
         Detecta el formato de una columna basándose en las primeras 5 filas de datos.
-        
-        Returns:
-            dict con info del formato: {'tiene_euro': True, 'decimales': 2, 'mayusculas': True}
+        Incluye: number_format, font (negrita), tipo de dato
         """
         formato = {
-            'tiene_euro': False,
-            'decimales': 0,
-            'mayusculas': True,
-            'ejemplo': None
+            'number_format': 'General',
+            'bold': False,
+            'font_name': None,
+            'font_size': None,
+            'tipo_valor': 'str'  # 'int', 'float', 'str'
         }
         
-        # Revisar filas 3 a 7 (primeras 5 filas de datos, asumiendo cabecera en 1-2)
+        # Revisar filas 3 a 7 (primeras 5 filas de datos)
         for fila in range(3, 8):
-            valor = ws.cell(row=fila, column=columna).value
+            celda = ws.cell(row=fila, column=columna)
+            valor = celda.value
+            
             if valor is not None:
-                valor_str = str(valor)
-                formato['ejemplo'] = valor_str
+                # Copiar formato de número
+                if celda.number_format:
+                    formato['number_format'] = celda.number_format
                 
-                # Detectar símbolo €
-                if '€' in valor_str:
-                    formato['tiene_euro'] = True
+                # Copiar fuente (negrita, nombre, tamaño)
+                if celda.font:
+                    formato['bold'] = celda.font.bold or False
+                    formato['font_name'] = celda.font.name
+                    formato['font_size'] = celda.font.size
                 
-                # Detectar decimales
-                if '.' in valor_str:
-                    partes = valor_str.replace('€', '').strip().split('.')
-                    if len(partes) == 2 and partes[1].replace('€', '').isdigit():
-                        formato['decimales'] = len(partes[1].replace('€', ''))
-                
-                # Detectar si es mayúsculas
-                letras = ''.join(c for c in valor_str if c.isalpha())
-                if letras:
-                    formato['mayusculas'] = letras.isupper()
+                # Detectar tipo de valor
+                if isinstance(valor, int):
+                    formato['tipo_valor'] = 'int'
+                elif isinstance(valor, float):
+                    formato['tipo_valor'] = 'float'
+                else:
+                    formato['tipo_valor'] = 'str'
                 
                 break  # Con el primer valor válido es suficiente
         
@@ -253,36 +254,27 @@ class ModificadorViajesRuta:
 
     def _aplicar_formato(self, valor, campo: str, formato: dict):
         """
-        Aplica el formato detectado al valor.
+        Convierte el valor al tipo correcto (número o texto).
+        NO añade € ni formato - eso lo hace Excel con number_format.
         """
-        # Campos de precio
-        if campo == 'precio':
+        # Campos numéricos (precio, km)
+        if campo in ['precio', 'km']:
             try:
-                valor_limpio = str(valor).replace('€', '').replace(' ', '').replace(',', '.')
-                valor_num = float(valor_limpio)
+                # Limpiar valor
+                valor_limpio = str(valor).replace('€', '').replace(' ', '').replace(',', '.').replace('km', '').replace('KM', '')
                 
-                if formato['tiene_euro']:
-                    decimales = formato['decimales'] if formato['decimales'] > 0 else 2
-                    return f"{valor_num:.{decimales}f}€"
+                if formato['tipo_valor'] == 'int':
+                    return int(float(valor_limpio))
+                elif formato['tipo_valor'] == 'float':
+                    return float(valor_limpio)
                 else:
-                    return valor_num
-            except:
-                return valor
-        
-        # Campos de km
-        elif campo == 'km':
-            try:
-                valor_limpio = str(valor).replace('km', '').replace('KM', '').replace(' ', '')
-                return int(float(valor_limpio))
+                    return float(valor_limpio)
             except:
                 return valor
         
         # Campos de texto (lugares, cliente, mercancía)
         elif campo in ['lugar_carga', 'lugar_entrega', 'cliente', 'mercancia']:
-            valor_str = str(valor).strip()
-            if formato['mayusculas']:
-                return valor_str.upper()
-            return valor_str
+            return str(valor).strip().upper()
         
         # Otros campos
         else:
@@ -290,7 +282,7 @@ class ModificadorViajesRuta:
 
     def _actualizar_excel(self, fila: int, campo: str, valor) -> bool:
         """
-        Actualiza un campo en el Excel MANTENIENDO EL FORMATO de las primeras filas.
+        Actualiza un campo en el Excel COPIANDO EL FORMATO de las primeras filas.
         
         Args:
             fila: Número de fila en el Excel
@@ -300,6 +292,9 @@ class ModificadorViajesRuta:
         Returns:
             True si se actualizó correctamente
         """
+        from openpyxl.styles import Font
+        from copy import copy
+        
         # Mapeo de campos a columnas del Excel
         COLUMNAS_EXCEL = {
             'lugar_carga': 14,
@@ -327,30 +322,43 @@ class ModificadorViajesRuta:
             
             # DETECTAR FORMATO de las primeras filas
             formato = self._detectar_formato_columna(ws, columna)
-            logger.info(f"[MOD_RUTA] Formato detectado para columna {columna}: {formato}")
+            logger.info(f"[MOD_RUTA] Formato detectado: {formato}")
             
-            # APLICAR FORMATO al valor
-            valor_formateado = self._aplicar_formato(valor, campo, formato)
-            logger.info(f"[MOD_RUTA] Valor original: {valor} -> Formateado: {valor_formateado}")
+            # CONVERTIR VALOR al tipo correcto
+            valor_convertido = self._aplicar_formato(valor, campo, formato)
+            logger.info(f"[MOD_RUTA] Valor: {valor} -> Convertido: {valor_convertido} (tipo: {type(valor_convertido).__name__})")
             
             # Guardar valor anterior para el log
-            valor_anterior = ws.cell(row=fila_real, column=columna).value
+            celda = ws.cell(row=fila_real, column=columna)
+            valor_anterior = celda.value
             
-            # Actualizar celda con valor formateado
-            ws.cell(row=fila_real, column=columna).value = valor_formateado
+            # ACTUALIZAR VALOR
+            celda.value = valor_convertido
+            
+            # COPIAR FORMATO DE NÚMERO (esto hace que se vea "500.00 €")
+            celda.number_format = formato['number_format']
+            
+            # COPIAR FUENTE (negrita, etc.)
+            celda.font = Font(
+                bold=formato['bold'],
+                name=formato['font_name'] or 'Calibri',
+                size=formato['font_size'] or 11
+            )
             
             # Añadir comentario con timestamp
             comentario = f"Modificado: {datetime.now().strftime('%d/%m/%Y %H:%M')}\nAnterior: {valor_anterior}"
-            ws.cell(row=fila_real, column=columna).comment = Comment(comentario, "Bot")
+            celda.comment = Comment(comentario, "Bot")
             
             wb.save(self.excel_path)
             wb.close()
             
-            logger.info(f"[MOD_RUTA] Excel actualizado: fila {fila_real}, {campo} = {valor_formateado}")
+            logger.info(f"[MOD_RUTA] Excel actualizado: fila {fila_real}, {campo} = {valor_convertido}")
             return True
             
         except Exception as e:
             logger.error(f"[MOD_RUTA] Error actualizando Excel: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
     
     def _actualizar_bd(self, viaje_id: int, campo: str, valor) -> bool:
