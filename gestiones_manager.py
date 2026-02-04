@@ -21,6 +21,38 @@ import openpyxl
 from openpyxl.comments import Comment
 from pathlib import Path
 from teclados import teclado_admin
+import re
+
+def interpretar_texto(texto: str) -> dict:
+    """Interpreta texto libre del usuario"""
+    texto_lower = texto.lower().strip()
+    
+    # Afirmaciones
+    if texto_lower in ['si', 'sí', 'sip', 'yes', 'ok', 'vale', 'claro']:
+        return {'tipo': 'si'}
+    if texto_lower.startswith('➕'):
+        return {'tipo': 'si'}
+    
+    # Negaciones
+    if texto_lower in ['no', 'nop', 'nope', 'nel', 'negativo', 'nada']:
+        return {'tipo': 'no'}
+    if texto_lower.startswith('➡️'):
+        return {'tipo': 'no'}
+    
+    # Cancelar
+    if texto_lower in ['cancelar', 'cancela', 'salir', 'dejalo', 'déjalo']:
+        return {'tipo': 'cancelar'}
+    if '❌' in texto_lower:
+        return {'tipo': 'cancelar'}
+    
+    # Volver
+    if texto_lower in ['volver', 'atras', 'atrás', 'back']:
+        return {'tipo': 'volver'}
+    if '⬅️' in texto_lower:
+        return {'tipo': 'volver'}
+    
+    return {'tipo': 'dato', 'valor': texto}
+
 
 logger = logging.getLogger(__name__)
 
@@ -180,8 +212,10 @@ class GestionesManager:
                 VIA_CARGA_ADICIONAL: [
                     MessageHandler(filters.Regex("^➕ Sí$"), self.via_pedir_carga_adicional),
                     MessageHandler(filters.Regex("^➡️ No$"), self.via_saltar_carga_adicional),
-                    MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_intercambio),
-                ],
+                    MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_lugar_carga),
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._handler_carga_adicional),
+   ],
                 VIA_CARGA_ADICIONAL_LUGAR: [
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_carga_adicional),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_carga_adicional_lugar),
@@ -194,7 +228,9 @@ class GestionesManager:
                     MessageHandler(filters.Regex("^➕ Sí$"), self.via_pedir_descarga_adicional),
                     MessageHandler(filters.Regex("^➡️ No$"), self.via_saltar_descarga_adicional),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_lugar_descarga_pre),
-                ],
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._handler_descarga_adicional),
+  ],
                 VIA_DESCARGA_ADICIONAL_LUGAR: [
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_descarga_adicional),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_descarga_adicional_lugar),
@@ -1723,6 +1759,59 @@ class GestionesManager:
         )
         return MOD_CAMPO
     
+
+
+    async def _handler_carga_adicional(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler inteligente para Sí/No"""
+        texto = update.message.text
+        interpretacion = interpretar_texto(texto)
+        
+        logger.info(f"[GESTIONES] Carga adicional: '{texto}' -> {interpretacion}")
+        
+        if interpretacion['tipo'] == 'si':
+            return await self.via_pedir_carga_adicional(update, context)
+        elif interpretacion['tipo'] == 'no':
+            return await self.via_saltar_carga_adicional(update, context)
+        elif interpretacion['tipo'] == 'cancelar':
+            return await self.cancelar(update, context)
+        elif interpretacion['tipo'] == 'volver':
+            return await self.via_volver_lugar_carga(update, context)
+        else:
+            await update.message.reply_text(
+                "❓ Por favor responde *Sí* o *No*",
+                parse_mode="Markdown"
+            )
+            return VIA_CARGA_ADICIONAL
+    
+    async def _handler_descarga_adicional(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler inteligente para Sí/No"""
+        texto = update.message.text
+        interpretacion = interpretar_texto(texto)
+        
+        if interpretacion['tipo'] == 'si':
+            return await self.via_pedir_descarga_adicional(update, context)
+        elif interpretacion['tipo'] == 'no':
+            return await self.via_saltar_descarga_adicional(update, context)
+        elif interpretacion['tipo'] == 'cancelar':
+            return await self.cancelar(update, context)
+        elif interpretacion['tipo'] == 'volver':
+            return await self.via_volver_lugar_descarga_pre(update, context)
+        else:
+            await update.message.reply_text(
+                "❓ Por favor responde *Sí* o *No*",
+                parse_mode="Markdown"
+            )
+            return VIA_DESCARGA_ADICIONAL
+    
+    async def via_volver_lugar_carga(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Vuelve a pedir lugar de carga"""
+        keyboard = [["⬅️ Volver", "❌ Cancelar"]]
+        await update.message.reply_text(
+            f"📦 *NUEVO VIAJE*\n\n📍 *¿Lugar de CARGA?*\n\n_Anterior: {context.user_data['viaje'].get('lugar_carga', '')}_",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
+        return VIA_LUGAR_CARGA
     # ============================================================
     # CANCELAR
     # ============================================================

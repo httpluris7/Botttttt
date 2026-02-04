@@ -173,6 +173,8 @@ class ModificadorViajesRuta:
             FROM conductores_empresa c
             INNER JOIN viajes_empresa v ON v.conductor_asignado LIKE '%' || c.nombre || '%'
             WHERE v.estado IN ('pendiente', 'en_ruta', 'asignado')
+                AND v.fila_excel IS NOT NULL
+                AND v.fila_excel > 0
         """
         
         params = ()
@@ -183,7 +185,10 @@ class ModificadorViajesRuta:
         query += " ORDER BY c.nombre"
         
         conductores = self._query(query, params)
-        
+        logger.info(f"[MOD_RUTA] Conductores encontrados: {len(conductores or [])}")
+        for c in (conductores or []):
+            logger.info(f"[MOD_RUTA]   - {c.get('nombre')}: viaje_id={c.get('viaje_id')}, fila={c.get('fila_excel')}")
+
         # Añadir estado GPS si está disponible
         if self.movildata and conductores:
             for c in conductores:
@@ -440,6 +445,23 @@ class ModificadorViajesRuta:
             return ConversationHandler.END
         
         conductor = conductores[indice]
+        
+        # LOG DE DEBUG - Añadir esto
+        logger.info(f"[MOD_RUTA] === CONDUCTOR SELECCIONADO ===")
+        logger.info(f"[MOD_RUTA] Nombre: {conductor.get('nombre')}")
+        logger.info(f"[MOD_RUTA] viaje_id: {conductor.get('viaje_id')}")
+        logger.info(f"[MOD_RUTA] fila_excel: {conductor.get('fila_excel')}")
+        logger.info(f"[MOD_RUTA] Ruta: {conductor.get('lugar_carga')} -> {conductor.get('lugar_entrega')}")
+        
+        # Verificar fila_excel válida
+        if not conductor.get('fila_excel'):
+            await query.edit_message_text(
+                "⚠️ *ERROR*\n\nNo se encontró la fila del Excel para este viaje.\n"
+                "Los cambios no se podrán guardar.",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+        
         context.user_data['conductor_seleccionado'] = conductor
         context.user_data['cambios_pendientes'] = {}
         
@@ -456,7 +478,6 @@ class ModificadorViajesRuta:
     
     def _formatear_detalle_viaje(self, conductor: Dict) -> str:
         """Formatea los detalles del viaje para mostrar"""
-        cambios = getattr(self, '_cambios_temp', {})
         
         texto = "📋 *DETALLE DEL VIAJE*\n"
         texto += "═" * 25 + "\n\n"
@@ -481,14 +502,9 @@ class ModificadorViajesRuta:
         if conductor.get('observaciones'):
             texto += f"\n📝 *Obs:* {conductor.get('observaciones', '')[:100]}\n"
         
-        # Mostrar cambios pendientes
-        cambios_pendientes = getattr(context, 'user_data', {}).get('cambios_pendientes', {}) if hasattr(self, 'context') else {}
-        if cambios_pendientes:
-            texto += "\n" + "═" * 25 + "\n"
-            texto += "⚠️ *CAMBIOS PENDIENTES:*\n"
-            for campo, valores in cambios_pendientes.items():
-                nombre = self.campos_viaje.get(campo, (campo, campo))[1]
-                texto += f"• {nombre}: {valores['nuevo']}\n"
+        # INFO DE DEBUG - Añadir esto
+        texto += "\n" + "─" * 25 + "\n"
+        texto += f"_📋 Viaje #{conductor.get('viaje_id', '?')} | Fila Excel: {conductor.get('fila_excel', '?')}_\n"
         
         texto += "\n_Selecciona un campo para modificar:_"
         return texto
