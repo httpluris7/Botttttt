@@ -237,8 +237,8 @@ class ModificadorViajesRuta:
             'km': 24,
             'observaciones': 28,
             'cliente': 9,
-            'hora_carga': 3,  # Ajustar según tu Excel
-            'hora_descarga': 4,  # Ajustar según tu Excel
+            'hora_carga': 3,
+            'hora_descarga': 4,
         }
         
         columna = COLUMNAS_EXCEL.get(campo)
@@ -250,20 +250,23 @@ class ModificadorViajesRuta:
             wb = openpyxl.load_workbook(self.excel_path)
             ws = wb.active
             
+            # Corregir desfase: la BD guarda fila-1
+            fila_real = fila + 1
+            
             # Guardar valor anterior para el log
-            valor_anterior = ws.cell(row=fila, column=columna).value
+            valor_anterior = ws.cell(row=fila_real, column=columna).value
             
             # Actualizar celda
-            ws.cell(row=fila, column=columna).value = valor
+            ws.cell(row=fila_real, column=columna).value = valor
             
             # Añadir comentario con timestamp
             comentario = f"Modificado: {datetime.now().strftime('%d/%m/%Y %H:%M')}\nAnterior: {valor_anterior}"
-            ws.cell(row=fila, column=columna).comment = Comment(comentario, "Bot")
+            ws.cell(row=fila_real, column=columna).comment = Comment(comentario, "Bot")
             
             wb.save(self.excel_path)
             wb.close()
             
-            logger.info(f"[MOD_RUTA] Excel actualizado: fila {fila}, {campo} = {valor}")
+            logger.info(f"[MOD_RUTA] Excel actualizado: fila {fila_real}, {campo} = {valor}")
             return True
             
         except Exception as e:
