@@ -26,9 +26,12 @@ logger = logging.getLogger(__name__)
 class TLSAdapter(HTTPAdapter):
     """Adaptador que fuerza TLS 1.2 para conexiones problemáticas"""
     def init_poolmanager(self, *args, **kwargs):
+        import ssl
         from urllib3.util.ssl_ import create_urllib3_context
         ctx = create_urllib3_context()
         ctx.set_ciphers('DEFAULT@SECLEVEL=1')
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
         kwargs['ssl_context'] = ctx
         return super().init_poolmanager(*args, **kwargs)
 
