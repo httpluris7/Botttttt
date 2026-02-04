@@ -311,7 +311,7 @@ async def obtener_gasolineras(
         
         # USAR SESIÓN CON TLS CONFIGURADO
         session = get_session()
-        response = session.get(url, timeout=30, headers=headers)
+        response = session.get(url, timeout=30, headers=headers, verify=False)
         
         logger.info(f"[GASOLINERAS] Respuesta API: {response.status_code}")
         
