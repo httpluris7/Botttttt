@@ -22,6 +22,22 @@ from openpyxl.comments import Comment
 from pathlib import Path
 from teclados import teclado_admin
 import re
+from validaciones import (
+    validar_telefono,
+    validar_matricula_tractora,
+    validar_matricula_remolque,
+    validar_nombre,
+    validar_lugar_carga,
+    validar_lugar_descarga,
+    validar_cliente,
+    validar_mercancia,
+    validar_precio,
+    validar_km,
+    validar_zona,
+    validar_observaciones,
+    normalizar_ciudad,
+    formatear_precio
+)
 
 def interpretar_texto(texto: str) -> dict:
     """Interpreta texto libre del usuario"""
@@ -503,7 +519,13 @@ class GestionesManager:
     
     async def cam_nombre(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Guarda nombre"""
-        context.user_data['camionero']['nombre'] = update.message.text.upper().strip()
+        resultado = validar_nombre(update.message.text)
+        
+        if not resultado['valido']:
+            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
+            return CAM_NOMBRE
+        
+        context.user_data['camionero']['nombre'] = resultado['valor']
         
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         
@@ -532,13 +554,13 @@ class GestionesManager:
     
     async def cam_telefono(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Guarda teléfono"""
-        telefono = update.message.text.strip().replace(" ", "").replace("+34", "")
+        resultado = validar_telefono(update.message.text)
         
-        if not telefono.isdigit() or len(telefono) < 9:
-            await update.message.reply_text("⚠️ Teléfono no válido. Introduce 9 dígitos:")
+        if not resultado['valido']:
+            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
             return CAM_TELEFONO
         
-        context.user_data['camionero']['telefono'] = telefono
+        context.user_data['camionero']['telefono'] = resultado['valor']
         
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         
@@ -567,7 +589,13 @@ class GestionesManager:
     
     async def cam_tractora(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Guarda tractora"""
-        context.user_data['camionero']['tractora'] = update.message.text.upper().strip().replace(" ", "")
+        resultado = validar_matricula_tractora(update.message.text)
+        
+        if not resultado['valido']:
+            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
+            return CAM_TRACTORA
+        
+        context.user_data['camionero']['tractora'] = resultado['valor']
         
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         
@@ -596,7 +624,13 @@ class GestionesManager:
     
     async def cam_remolque(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Guarda remolque"""
-        context.user_data['camionero']['remolque'] = update.message.text.upper().strip().replace(" ", "")
+        resultado = validar_matricula_remolque(update.message.text)
+        
+        if not resultado['valido']:
+            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
+            return CAM_REMOLQUE
+        
+        context.user_data['camionero']['remolque'] = resultado['valor']
         
         keyboard = [
             ["AZAGRA", "TUDELA", "CALAHORRA"],
@@ -628,7 +662,7 @@ class GestionesManager:
     
     async def cam_ubicacion(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Guarda ubicación y muestra resumen"""
-        context.user_data['camionero']['ubicacion'] = update.message.text.upper().strip()
+        context.user_data['camionero']['ubicacion'] = normalizar_ciudad(update.message.text)
         return await self.cam_mostrar_resumen(update, context)
     
     async def cam_mostrar_resumen(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -781,7 +815,13 @@ class GestionesManager:
         return VIA_ZONA
     
     async def via_cliente(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        context.user_data['viaje']['cliente'] = update.message.text.upper().strip()
+        resultado = validar_cliente(update.message.text)
+        
+        if not resultado['valido']:
+            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
+            return VIA_CLIENTE
+        
+        context.user_data['viaje']['cliente'] = resultado['valor']
         
         keyboard = [["⏭️ Saltar"], ["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
@@ -882,7 +922,13 @@ class GestionesManager:
         return VIA_INTERCAMBIO
     
     async def via_lugar_carga(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        context.user_data['viaje']['lugar_carga'] = update.message.text.upper().strip()
+        resultado = validar_lugar_carga(update.message.text)
+        
+        if not resultado['valido']:
+            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
+            return VIA_LUGAR_CARGA
+        
+        context.user_data['viaje']['lugar_carga'] = resultado['valor']
         context.user_data['viaje']['carga_adicional'] = None  # Resetear
         
         keyboard = [["➕ Sí", "➡️ No"], ["⬅️ Volver", "❌ Cancelar"]]
@@ -907,7 +953,13 @@ class GestionesManager:
     
     async def via_carga_adicional_lugar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Guarda carga adicional y pasa a descarga"""
-        context.user_data['viaje']['carga_adicional'] = update.message.text.upper().strip()
+        resultado = validar_lugar_carga(update.message.text)
+        
+        if not resultado['valido']:
+            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
+            return VIA_CARGA_ADICIONAL_LUGAR
+        
+        context.user_data['viaje']['carga_adicional'] = resultado['valor']
         return await self._pedir_lugar_descarga(update, context)
     
     async def via_saltar_carga_adicional(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -950,7 +1002,13 @@ class GestionesManager:
         return VIA_LUGAR_CARGA
     
     async def via_lugar_descarga(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        context.user_data['viaje']['lugar_descarga'] = update.message.text.upper().strip()
+        resultado = validar_lugar_descarga(update.message.text)
+        
+        if not resultado['valido']:
+            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
+            return VIA_LUGAR_DESCARGA
+        
+        context.user_data['viaje']['lugar_descarga'] = resultado['valor']
         context.user_data['viaje']['descarga_adicional'] = None  # Resetear
         
         keyboard = [["➕ Sí", "➡️ No"], ["⬅️ Volver", "❌ Cancelar"]]
@@ -975,7 +1033,13 @@ class GestionesManager:
     
     async def via_descarga_adicional_lugar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Guarda descarga adicional y pasa a mercancía"""
-        context.user_data['viaje']['descarga_adicional'] = update.message.text.upper().strip()
+        resultado = validar_lugar_descarga(update.message.text)
+        
+        if not resultado['valido']:
+            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
+            return VIA_DESCARGA_ADICIONAL_LUGAR
+        
+        context.user_data['viaje']['descarga_adicional'] = resultado['valor']
         return await self._pedir_mercancia(update, context)
     
     async def via_saltar_descarga_adicional(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1052,7 +1116,13 @@ class GestionesManager:
         return VIA_LUGAR_DESCARGA
     
     async def via_mercancia(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        context.user_data['viaje']['mercancia'] = update.message.text.upper().strip()
+        resultado = validar_mercancia(update.message.text)
+        
+        if not resultado['valido']:
+            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
+            return VIA_MERCANCIA
+        
+        context.user_data['viaje']['mercancia'] = resultado['valor']
         
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
@@ -1076,13 +1146,13 @@ class GestionesManager:
         return VIA_MERCANCIA
     
     async def via_km(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        texto = update.message.text.strip().replace("km", "").replace("KM", "").replace(" ", "")
+        resultado = validar_km(update.message.text)
         
-        try:
-            context.user_data['viaje']['km'] = float(texto)
-        except:
-            await update.message.reply_text("⚠️ Introduce solo el número:")
+        if not resultado['valido']:
+            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
             return VIA_KM
+        
+        context.user_data['viaje']['km'] = resultado['valor']
         
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
@@ -1102,13 +1172,14 @@ class GestionesManager:
         return VIA_KM
     
     async def via_precio(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        texto = update.message.text.strip().replace("€", "").replace(" ", "")
+        resultado = validar_precio(update.message.text)
         
-        try:
-            context.user_data['viaje']['precio'] = float(texto)
-        except:
-            await update.message.reply_text("⚠️ Introduce solo el número:")
+        if not resultado['valido']:
+            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
             return VIA_PRECIO
+        
+        context.user_data['viaje']['precio'] = resultado['valor']
+        context.user_data['viaje']['precio_excel'] = resultado['valor_excel']
         
         return await self.via_mostrar_resumen(update, context)
     
@@ -1255,7 +1326,11 @@ class GestionesManager:
                 ws.cell(row=fila, column=17).comment = nota_descarga
             
             ws.cell(row=fila, column=20, value=via.get('mercancia'))
-            ws.cell(row=fila, column=23, value=via.get('precio'))
+            
+            # PRECIO CON FORMATO EXCEL (956.00€)
+            precio_excel = via.get('precio_excel', f"{via.get('precio', 0):.2f}€")
+            ws.cell(row=fila, column=23, value=precio_excel)
+            
             ws.cell(row=fila, column=24, value=via.get('km'))
             ws.cell(row=fila, column=25, value=f"=W{fila}/X{fila}")
             
@@ -1283,7 +1358,7 @@ class GestionesManager:
             
             drive_ok = self._sync_to_drive()
             
-            mensaje = f"✅ *¡VIAJE AÑADIDO!*\n\n🏢 {via.get('cliente')}\n📍 {carga_str} → {descarga_str}\n💰 {via.get('precio', 0):.0f}€\n\n"
+            mensaje = f"✅ *¡VIAJE AÑADIDO!*\n\n🏢 {via.get('cliente')}\n📍 {carga_str} → {descarga_str}\n💰 {precio_excel}\n\n"
             mensaje += "☁️ _Sincronizado con Drive_" if drive_ok else "⚠️ _Guardado local_"
             
             await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
