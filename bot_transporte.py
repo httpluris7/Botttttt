@@ -1812,9 +1812,7 @@ async def mensaje_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return await gestiones_manager.inicio_modificar_viaje(update, context)
                 return
             
-            from teclados import obtener_teclado
-
-# ... dentro de la función mensaje_texto ...
+           
 
             teclado = obtener_teclado(es_admin=admin, esta_vinculado=True)
             await update.message.reply_text(
