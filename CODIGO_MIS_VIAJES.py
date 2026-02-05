@@ -1,12 +1,16 @@
 # ============================================================
 # REEMPLAZA LA FUNCIÓN mis_viajes EN bot_transporte.py
 # ============================================================
-# Busca la función actual (líneas ~471-497) y reemplázala por esta:
+# Versión 2.0 - Soporte hasta 10 cargas y 10 descargas
 
 import urllib.parse
 import random
 import re
 from datetime import datetime, timedelta
+
+MAX_CARGAS = 10
+MAX_DESCARGAS = 10
+
 
 def generar_link_maps(direccion: str) -> str:
     """Genera link de Google Maps"""
@@ -14,36 +18,58 @@ def generar_link_maps(direccion: str) -> str:
         return ""
     return f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(direccion)}"
 
+
 def generar_link_waze(direccion: str) -> str:
     """Genera link de Waze"""
     if not direccion or str(direccion).lower() in ['nan', 'none', '']:
         return ""
     return f"https://waze.com/ul?q={urllib.parse.quote(direccion)}&navigate=yes"
 
+
 def extraer_cargas_adicionales(observaciones: str) -> dict:
-    """Extrae cargas y descargas adicionales de las observaciones"""
-    resultado = {'carga2': None, 'descarga2': None}
+    """
+    Extrae TODAS las cargas y descargas adicionales de las observaciones.
+    Soporta hasta CARGA2..CARGA10 y DESCARGA2..DESCARGA10.
+    
+    Returns:
+        dict con 'cargas_extra': [lista], 'descargas_extra': [lista]
+        Y también mantiene 'carga2'/'descarga2' para compatibilidad
+    """
+    resultado = {
+        'carga2': None,
+        'descarga2': None,
+        'cargas_extra': [],     # Todas las cargas adicionales (2,3,4...)
+        'descargas_extra': [],  # Todas las descargas adicionales
+    }
     
     if not observaciones:
         return resultado
     
-    # Buscar CARGA2: xxx
-    match_carga = re.search(r'CARGA2:\s*([^|]+)', observaciones)
-    if match_carga:
-        resultado['carga2'] = match_carga.group(1).strip()
+    # Extraer cargas adicionales (CARGA2..CARGA10)
+    for i in range(2, MAX_CARGAS + 1):
+        match = re.search(rf'CARGA{i}:\s*([^|]+)', observaciones)
+        if match:
+            valor = match.group(1).strip()
+            resultado['cargas_extra'].append(valor)
+            if i == 2:
+                resultado['carga2'] = valor
     
-    # Buscar DESCARGA2: xxx
-    match_descarga = re.search(r'DESCARGA2:\s*([^|]+)', observaciones)
-    if match_descarga:
-        resultado['descarga2'] = match_descarga.group(1).strip()
+    # Extraer descargas adicionales (DESCARGA2..DESCARGA10)
+    for i in range(2, MAX_DESCARGAS + 1):
+        match = re.search(rf'DESCARGA{i}:\s*([^|]+)', observaciones)
+        if match:
+            valor = match.group(1).strip()
+            resultado['descargas_extra'].append(valor)
+            if i == 2:
+                resultado['descarga2'] = valor
     
     return resultado
+
 
 def simular_horarios(km: int, indice_viaje: int = 0) -> dict:
     """Genera horarios realistas basados en km"""
     ahora = datetime.now()
     
-    # Primer viaje: carga en 1-2h, siguientes: +3-4h por viaje
     if indice_viaje == 0:
         minutos_hasta_carga = random.randint(60, 120)
     else:
@@ -52,7 +78,6 @@ def simular_horarios(km: int, indice_viaje: int = 0) -> dict:
     hora_carga = ahora + timedelta(minutes=minutos_hasta_carga)
     hora_carga = hora_carga.replace(minute=(hora_carga.minute // 15) * 15, second=0)
     
-    # Tiempo de viaje: ~75km/h + margen
     km = km or 200
     horas_viaje = max(1, km / 75)
     minutos_viaje = int(horas_viaje * 60) + random.randint(20, 45)
@@ -69,7 +94,7 @@ def simular_horarios(km: int, indice_viaje: int = 0) -> dict:
 
 
 async def mis_viajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mis viajes asignados - FORMATO DETALLADO CON CARGAS/DESCARGAS ADICIONALES"""
+    """Mis viajes asignados - FORMATO CON HASTA 10 CARGAS/DESCARGAS"""
     user = update.effective_user
     conductor = db.obtener_conductor(user.id)
     admin = es_admin(user.id)
@@ -86,108 +111,90 @@ async def mis_viajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     mensaje = f"🚛 TUS VIAJES ({len(viajes)})\n"
     
-    for i, v in enumerate(viajes[:3]):  # Máximo 3 viajes
+    for i, v in enumerate(viajes[:3]):
         cliente = v.get('cliente', 'N/A')
         mercancia = v.get('mercancia', 'N/A')
         km = v.get('km', 0) or 0
         intercambio = v.get('intercambio', '')
         observaciones = v.get('observaciones', '')
         
-        # Extraer cargas/descargas adicionales de observaciones
+        # Extraer todas las cargas/descargas adicionales
         adicionales = extraer_cargas_adicionales(observaciones)
         
-        # Lugares (usar direcciones si existen, si no lugares)
+        # Lugar principal (usar dirección si existe)
         lugar_carga = v.get('direccion_carga') or v.get('lugar_carga', '')
         lugar_descarga = v.get('direccion_descarga') or v.get('lugar_entrega', '')
         
-        # Limpiar valores nulos
         if str(lugar_carga).lower() in ['nan', 'none', '']:
             lugar_carga = v.get('lugar_carga', 'Sin especificar')
         if str(lugar_descarga).lower() in ['nan', 'none', '']:
             lugar_descarga = v.get('lugar_entrega', 'Sin especificar')
         
-        # Horarios simulados
-        horarios = simular_horarios(km, i)
+        # Construir lista completa de cargas y descargas
+        todas_cargas = [lugar_carga] + adicionales['cargas_extra']
+        todas_descargas = [lugar_descarga] + adicionales['descargas_extra']
         
-        # Detectar intercambio
+        horarios = simular_horarios(km, i)
         hay_intercambio = intercambio and str(intercambio).upper().strip() == 'SI'
         
         mensaje += f"\n{'═'*30}\n"
         mensaje += f"📋 VIAJE {i+1}\n"
         mensaje += f"{'═'*30}\n"
         
-        # Mercancía y KM
         mensaje += f"📦 MERCANCÍA: {mercancia}\n"
         mensaje += f"📏 {km}km"
         if hay_intercambio:
             mensaje += f" | 🔄 Intercambio de palés"
         mensaje += "\n"
         
-        # ══════ CARGA ══════
+        # ══════ CARGAS ══════
         mensaje += f"\n{'━'*30}\n"
-        mensaje += f"📥 CARGA - {cliente}\n"
+        mensaje += f"📥 CARGAS ({len(todas_cargas)}) - {cliente}\n"
         mensaje += f"{'━'*30}\n"
         
-        # Mostrar carga principal
-        mensaje += f"📍 1ª Carga: {lugar_carga}\n"
-        link_maps = generar_link_maps(lugar_carga)
-        link_waze = generar_link_waze(lugar_carga)
-        if link_maps:
-            mensaje += f"🗺️ Maps: {link_maps}\n"
-        if link_waze:
-            mensaje += f"🚗 Waze: {link_waze}\n"
-        
-        # Si hay carga adicional, mostrarla
-        if adicionales['carga2']:
-            mensaje += f"\n📍 2ª Carga: {adicionales['carga2']}\n"
-            link_maps2 = generar_link_maps(adicionales['carga2'])
-            link_waze2 = generar_link_waze(adicionales['carga2'])
-            if link_maps2:
-                mensaje += f"🗺️ Maps: {link_maps2}\n"
-            if link_waze2:
-                mensaje += f"🚗 Waze: {link_waze2}\n"
+        for j, carga in enumerate(todas_cargas):
+            etiqueta = f"{j+1}ª Carga"
+            mensaje += f"\n📍 {etiqueta}: {carga}\n"
+            link_maps = generar_link_maps(carga)
+            link_waze = generar_link_waze(carga)
+            if link_maps:
+                mensaje += f"🗺️ Maps: {link_maps}\n"
+            if link_waze:
+                mensaje += f"🚗 Waze: {link_waze}\n"
         
         if hay_intercambio:
-            mensaje += f"🔄 Intercambio de palés\n"
-        mensaje += f"📅 {horarios['fecha_carga']} a las {horarios['hora_carga']}\n"
+            mensaje += f"\n🔄 Intercambio de palés\n"
+        mensaje += f"\n📅 {horarios['fecha_carga']} a las {horarios['hora_carga']}\n"
         
-        # ══════ DESCARGA ══════
+        # ══════ DESCARGAS ══════
         mensaje += f"\n{'━'*30}\n"
-        mensaje += f"📤 DESCARGA\n"
+        mensaje += f"📤 DESCARGAS ({len(todas_descargas)})\n"
         mensaje += f"{'━'*30}\n"
         
-        # Mostrar descarga principal
-        mensaje += f"📍 1ª Descarga: {lugar_descarga}\n"
-        link_maps = generar_link_maps(lugar_descarga)
-        link_waze = generar_link_waze(lugar_descarga)
-        if link_maps:
-            mensaje += f"🗺️ Maps: {link_maps}\n"
-        if link_waze:
-            mensaje += f"🚗 Waze: {link_waze}\n"
+        for j, descarga in enumerate(todas_descargas):
+            etiqueta = f"{j+1}ª Descarga"
+            mensaje += f"\n📍 {etiqueta}: {descarga}\n"
+            link_maps = generar_link_maps(descarga)
+            link_waze = generar_link_waze(descarga)
+            if link_maps:
+                mensaje += f"🗺️ Maps: {link_maps}\n"
+            if link_waze:
+                mensaje += f"🚗 Waze: {link_waze}\n"
         
-        # Si hay descarga adicional, mostrarla
-        if adicionales['descarga2']:
-            mensaje += f"\n📍 2ª Descarga: {adicionales['descarga2']}\n"
-            link_maps2 = generar_link_maps(adicionales['descarga2'])
-            link_waze2 = generar_link_waze(adicionales['descarga2'])
-            if link_maps2:
-                mensaje += f"🗺️ Maps: {link_maps2}\n"
-            if link_waze2:
-                mensaje += f"🚗 Waze: {link_waze2}\n"
+        mensaje += f"\n📅 {horarios['fecha_descarga']} a las {horarios['hora_descarga']}\n"
         
-        mensaje += f"📅 {horarios['fecha_descarga']} a las {horarios['hora_descarga']}\n"
-        
-        # Observaciones (sin mostrar los códigos internos)
+        # Observaciones (limpias, sin códigos internos)
         obs_limpia = observaciones
         if obs_limpia:
-            # Quitar CARGA2 y DESCARGA2 de las observaciones visibles
-            obs_limpia = re.sub(r'\s*\|\s*CARGA2:[^|]+', '', obs_limpia)
-            obs_limpia = re.sub(r'\s*\|\s*DESCARGA2:[^|]+', '', obs_limpia)
+            # Quitar todos los CARGAN y DESCARGAN de las observaciones visibles
+            for n in range(2, MAX_CARGAS + 1):
+                obs_limpia = re.sub(rf'\s*\|\s*CARGA{n}:[^|]+', '', obs_limpia)
+            for n in range(2, MAX_DESCARGAS + 1):
+                obs_limpia = re.sub(rf'\s*\|\s*DESCARGA{n}:[^|]+', '', obs_limpia)
             obs_limpia = obs_limpia.strip()
             if obs_limpia and str(obs_limpia).lower() not in ['nan', 'none', '']:
                 mensaje += f"\n📝 NOTAS: {obs_limpia}\n"
     
-    # Si hay más viajes
     if len(viajes) > 3:
         mensaje += f"\n\n📋 Tienes {len(viajes) - 3} viaje(s) más."
     

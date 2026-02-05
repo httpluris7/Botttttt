@@ -1,23 +1,24 @@
 """
-MODIFICAR VIAJES EN RUTA
-=========================
+MODIFICAR VIAJES EN RUTA (v2.0 - MULTI-CARGA/DESCARGA)
+========================================================
 Sistema para que los admins modifiquen viajes de conductores en ruta.
+Ahora soporta hasta 10 cargas y 10 descargas por viaje.
 
 Flujo:
 1. Admin selecciona "Modificar viaje en ruta"
 2. Selecciona zona
 3. Ve lista de conductores EN RUTA con: nombre, teléfono, ruta, cliente
 4. Selecciona conductor
-5. Ve detalles del viaje y puede modificar campos
-6. Confirma cambios
-7. Se actualiza Excel + Drive + notifica al conductor
-
-Version 1.0
+5. Ve detalles del viaje con TODAS las cargas/descargas
+6. Puede modificar campos individuales o gestionar cargas/descargas
+7. Confirma cambios
+8. Se actualiza Excel + Drive + notifica al conductor
 """
 
 import sqlite3
 import logging
 import openpyxl
+import re
 from openpyxl.comments import Comment
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -36,6 +37,12 @@ from telegram.ext import (
 logger = logging.getLogger(__name__)
 
 # ============================================================
+# CONSTANTES
+# ============================================================
+MAX_CARGAS = 10
+MAX_DESCARGAS = 10
+
+# ============================================================
 # ESTADOS DEL CONVERSATION HANDLER
 # ============================================================
 MOD_RUTA_ZONA = 100
@@ -45,27 +52,128 @@ MOD_RUTA_CAMPO = 103
 MOD_RUTA_VALOR = 104
 MOD_RUTA_CONFIRMAR = 105
 
+# Estados para gestión de cargas/descargas en ruta
+MOD_RUTA_CARGAS_MENU = 110
+MOD_RUTA_CARGAS_EDITAR = 111
+MOD_RUTA_CARGAS_ELIMINAR = 112
+MOD_RUTA_DESCARGAS_MENU = 113
+MOD_RUTA_DESCARGAS_EDITAR = 114
+MOD_RUTA_DESCARGAS_ELIMINAR = 115
+
 # Zonas disponibles
 ZONAS = ["ZONA NORTE", "ZONA SUR", "ZONA ESTE", "ZONA OESTE", "ZONA CENTRO"]
 
+
+# ============================================================
+# HELPERS MULTI-CARGA/DESCARGA
+# ============================================================
+
+def _extraer_cargas_de_obs(observaciones: str) -> list:
+    """Extrae cargas adicionales (CARGA2..CARGA10) de observaciones"""
+    extra = []
+    if not observaciones:
+        return extra
+    for i in range(2, MAX_CARGAS + 1):
+        match = re.search(rf'CARGA{i}:\s*([^|]+)', observaciones)
+        if match:
+            extra.append(match.group(1).strip())
+    return extra
+
+
+def _extraer_descargas_de_obs(observaciones: str) -> list:
+    """Extrae descargas adicionales (DESCARGA2..DESCARGA10) de observaciones"""
+    extra = []
+    if not observaciones:
+        return extra
+    for i in range(2, MAX_DESCARGAS + 1):
+        match = re.search(rf'DESCARGA{i}:\s*([^|]+)', observaciones)
+        if match:
+            extra.append(match.group(1).strip())
+    return extra
+
+
+def _inicializar_cargas_conductor(conductor: dict):
+    """Asegura que conductor tenga listas de cargas/descargas"""
+    if 'cargas' not in conductor:
+        cargas = []
+        if conductor.get('lugar_carga'):
+            cargas.append(conductor['lugar_carga'])
+        obs = conductor.get('observaciones', '') or ''
+        cargas.extend(_extraer_cargas_de_obs(obs))
+        conductor['cargas'] = cargas
+    
+    if 'descargas' not in conductor:
+        descargas = []
+        lugar = conductor.get('lugar_entrega') or conductor.get('lugar_descarga', '')
+        if lugar:
+            descargas.append(lugar)
+        obs = conductor.get('observaciones', '') or ''
+        descargas.extend(_extraer_descargas_de_obs(obs))
+        conductor['descargas'] = descargas
+
+
+def _sync_compat_conductor(conductor: dict):
+    """Sincroniza listas con campos legacy"""
+    cargas = conductor.get('cargas', [])
+    conductor['lugar_carga'] = cargas[0] if cargas else ''
+    
+    descargas = conductor.get('descargas', [])
+    conductor['lugar_entrega'] = descargas[0] if descargas else ''
+
+
+def _generar_observaciones_ruta(conductor: dict) -> str:
+    """Genera string de observaciones con todas las cargas/descargas"""
+    partes = []
+    
+    # Mantener zona si existe
+    obs_original = conductor.get('observaciones', '') or ''
+    zona_match = re.search(r'ZONA:\s*([^|]+)', obs_original)
+    if zona_match:
+        partes.append(f"ZONA: {zona_match.group(1).strip()}")
+    
+    cargas = conductor.get('cargas', [])
+    for i, c in enumerate(cargas[1:], 2):
+        partes.append(f"CARGA{i}: {c}")
+    
+    descargas = conductor.get('descargas', [])
+    for i, d in enumerate(descargas[1:], 2):
+        partes.append(f"DESCARGA{i}: {d}")
+    
+    # Mantener partes de observaciones originales que no sean CARGA/DESCARGA/ZONA
+    if obs_original:
+        for parte in obs_original.split('|'):
+            parte = parte.strip()
+            if parte and not re.match(r'(ZONA|CARGA\d+|DESCARGA\d+):', parte):
+                partes.append(parte)
+    
+    return " | ".join(partes)
+
+
+def _generar_comentario_cargas(cargas: list) -> str:
+    if len(cargas) <= 1:
+        return ""
+    return f"{len(cargas)} CARGAS: " + " + ".join(cargas)
+
+
+def _generar_comentario_descargas(descargas: list) -> str:
+    if len(descargas) <= 1:
+        return ""
+    return f"{len(descargas)} DESCARGAS: " + " + ".join(descargas)
+
+
+# ============================================================
+# CLASE PRINCIPAL
+# ============================================================
 
 class ModificadorViajesRuta:
     """
     Gestiona la modificación de viajes de conductores en ruta.
     Incluye notificaciones y sincronización con Drive.
+    Soporta hasta 10 cargas y 10 descargas por viaje.
     """
     
     def __init__(self, excel_path: str, db_path: str, es_admin_func, 
                  subir_drive_func=None, bot=None, movildata_api=None):
-        """
-        Args:
-            excel_path: Ruta al Excel PRUEBO.xlsx
-            db_path: Ruta a la BD SQLite
-            es_admin_func: Función para verificar si es admin
-            subir_drive_func: Función para subir Excel a Drive
-            bot: Instancia del bot para notificaciones
-            movildata_api: API de GPS para saber estados
-        """
         self.excel_path = excel_path
         self.db_path = db_path
         self.es_admin = es_admin_func
@@ -73,10 +181,10 @@ class ModificadorViajesRuta:
         self.bot = bot
         self.movildata = movildata_api
         
-        # Campos modificables del viaje
+        # Campos modificables del viaje (sin cargas/descargas, que tienen su submenú)
         self.campos_viaje = {
-            '1': ('lugar_carga', '📍 Lugar de Carga'),
-            '2': ('lugar_entrega', '📍 Lugar de Descarga'),
+            '1': ('cargas', '📍 Cargas'),
+            '2': ('descargas', '📍 Descargas'),
             '3': ('mercancia', '📦 Mercancía'),
             '4': ('observaciones', '📝 Observaciones'),
             '5': ('hora_carga', '⏰ Hora de Carga'),
@@ -86,7 +194,7 @@ class ModificadorViajesRuta:
             '9': ('km', '📏 Kilómetros'),
         }
         
-        logger.info("[MOD_RUTA] Modificador de viajes en ruta inicializado")
+        logger.info("[MOD_RUTA] Modificador de viajes en ruta v2.0 inicializado")
     
     def get_conversation_handler(self):
         """Devuelve el ConversationHandler para modificar viajes en ruta"""
@@ -120,12 +228,43 @@ class ModificadorViajesRuta:
                     CallbackQueryHandler(self.confirmar_cambios, pattern="^confirmar_si$"),
                     CallbackQueryHandler(self.volver_detalle, pattern="^confirmar_no$"),
                 ],
+                # === GESTIÓN CARGAS EN RUTA ===
+                MOD_RUTA_CARGAS_MENU: [
+                    MessageHandler(filters.Regex("^➕ Añadir carga$"), self._ruta_cargas_añadir),
+                    MessageHandler(filters.Regex("^🗑️ Eliminar carga$"), self._ruta_cargas_pedir_eliminar),
+                    MessageHandler(filters.Regex("^⬅️ Volver$"), self._ruta_cargas_volver),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._ruta_cargas_seleccionar),
+                ],
+                MOD_RUTA_CARGAS_EDITAR: [
+                    MessageHandler(filters.Regex("^⬅️ Volver$"), self._ruta_mostrar_cargas_menu),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._ruta_cargas_guardar_edicion),
+                ],
+                MOD_RUTA_CARGAS_ELIMINAR: [
+                    MessageHandler(filters.Regex("^⬅️ Volver$"), self._ruta_mostrar_cargas_menu),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._ruta_cargas_confirmar_eliminar),
+                ],
+                # === GESTIÓN DESCARGAS EN RUTA ===
+                MOD_RUTA_DESCARGAS_MENU: [
+                    MessageHandler(filters.Regex("^➕ Añadir descarga$"), self._ruta_descargas_añadir),
+                    MessageHandler(filters.Regex("^🗑️ Eliminar descarga$"), self._ruta_descargas_pedir_eliminar),
+                    MessageHandler(filters.Regex("^⬅️ Volver$"), self._ruta_descargas_volver),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._ruta_descargas_seleccionar),
+                ],
+                MOD_RUTA_DESCARGAS_EDITAR: [
+                    MessageHandler(filters.Regex("^⬅️ Volver$"), self._ruta_mostrar_descargas_menu),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._ruta_descargas_guardar_edicion),
+                ],
+                MOD_RUTA_DESCARGAS_ELIMINAR: [
+                    MessageHandler(filters.Regex("^⬅️ Volver$"), self._ruta_mostrar_descargas_menu),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._ruta_descargas_confirmar_eliminar),
+                ],
             },
             fallbacks=[
                 CommandHandler("cancelar", self.cancelar),
                 MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
             ],
         )
+
     # ============================================================
     # FUNCIONES DE BASE DE DATOS
     # ============================================================
@@ -146,12 +285,7 @@ class ModificadorViajesRuta:
             return None
     
     def _obtener_conductores_en_ruta(self, zona: str = None) -> List[Dict]:
-        """
-        Obtiene conductores que están EN RUTA (con viaje activo).
-        
-        Returns:
-            Lista de conductores con sus datos y viaje actual
-        """
+        """Obtiene conductores que están EN RUTA (con viaje activo)."""
         query = """
             SELECT DISTINCT 
                 c.nombre,
@@ -196,6 +330,11 @@ class ModificadorViajesRuta:
                     except:
                         pass
         
+        # Inicializar cargas/descargas para cada conductor
+        if conductores:
+            for c in conductores:
+                _inicializar_cargas_conductor(c)
+        
         return conductores or []
     
     def _obtener_telegram_id_conductor(self, nombre: str) -> Optional[int]:
@@ -212,57 +351,39 @@ class ModificadorViajesRuta:
     # ============================================================
     
     def _detectar_formato_columna(self, ws, columna: int) -> dict:
-        """
-        Detecta el formato de una columna basándose en las primeras 5 filas de datos.
-        Incluye: number_format, font (negrita), tipo de dato
-        """
+        """Detecta el formato de una columna basándose en las primeras filas."""
         formato = {
             'number_format': 'General',
             'bold': False,
-            'font_name': None,
-            'font_size': None,
-            'tipo_valor': 'str'  # 'int', 'float', 'str'
+            'font_name': 'Calibri',
+            'font_size': 11,
+            'tipo_valor': 'str',
         }
         
-        # Revisar filas 3 a 7 (primeras 5 filas de datos)
         for fila in range(3, 8):
             celda = ws.cell(row=fila, column=columna)
-            valor = celda.value
-            
-            if valor is not None:
-                # Copiar formato de número
-                if celda.number_format:
-                    formato['number_format'] = celda.number_format
-                
-                # Copiar fuente (negrita, nombre, tamaño)
+            if celda.value is not None:
+                formato['number_format'] = celda.number_format
                 if celda.font:
                     formato['bold'] = celda.font.bold or False
                     formato['font_name'] = celda.font.name
                     formato['font_size'] = celda.font.size
                 
-                # Detectar tipo de valor
-                if isinstance(valor, int):
+                if isinstance(celda.value, int):
                     formato['tipo_valor'] = 'int'
-                elif isinstance(valor, float):
+                elif isinstance(celda.value, float):
                     formato['tipo_valor'] = 'float'
                 else:
                     formato['tipo_valor'] = 'str'
-                
-                break  # Con el primer valor válido es suficiente
+                break
         
         return formato
-
-    def _aplicar_formato(self, valor, campo: str, formato: dict):
-        """
-        Convierte el valor al tipo correcto (número o texto).
-        NO añade € ni formato - eso lo hace Excel con number_format.
-        """
-        # Campos numéricos (precio, km)
+    
+    def _aplicar_formato(self, valor, campo, formato):
+        """Convierte valor al tipo correcto según formato detectado."""
         if campo in ['precio', 'km']:
             try:
-                # Limpiar valor
                 valor_limpio = str(valor).replace('€', '').replace(' ', '').replace(',', '.').replace('km', '').replace('KM', '')
-                
                 if formato['tipo_valor'] == 'int':
                     return int(float(valor_limpio))
                 elif formato['tipo_valor'] == 'float':
@@ -271,31 +392,15 @@ class ModificadorViajesRuta:
                     return float(valor_limpio)
             except:
                 return valor
-        
-        # Campos de texto (lugares, cliente, mercancía)
         elif campo in ['lugar_carga', 'lugar_entrega', 'cliente', 'mercancia']:
             return str(valor).strip().upper()
-        
-        # Otros campos
         else:
             return valor
 
     def _actualizar_excel(self, fila: int, campo: str, valor) -> bool:
-        """
-        Actualiza un campo en el Excel COPIANDO EL FORMATO de las primeras filas.
-        
-        Args:
-            fila: Número de fila en el Excel
-            campo: Nombre del campo a actualizar
-            valor: Nuevo valor
-        
-        Returns:
-            True si se actualizó correctamente
-        """
+        """Actualiza un campo en el Excel copiando formato."""
         from openpyxl.styles import Font
-        from copy import copy
         
-        # Mapeo de campos a columnas del Excel
         COLUMNAS_EXCEL = {
             'lugar_carga': 14,
             'lugar_entrega': 17,
@@ -317,35 +422,22 @@ class ModificadorViajesRuta:
             wb = openpyxl.load_workbook(self.excel_path)
             ws = wb.active
             
-            # Corregir desfase: la BD guarda fila-1
-            fila_real = fila + 1
+            fila_real = fila + 1  # Corregir desfase BD
             
-            # DETECTAR FORMATO de las primeras filas
             formato = self._detectar_formato_columna(ws, columna)
-            logger.info(f"[MOD_RUTA] Formato detectado: {formato}")
-            
-            # CONVERTIR VALOR al tipo correcto
             valor_convertido = self._aplicar_formato(valor, campo, formato)
-            logger.info(f"[MOD_RUTA] Valor: {valor} -> Convertido: {valor_convertido} (tipo: {type(valor_convertido).__name__})")
             
-            # Guardar valor anterior para el log
             celda = ws.cell(row=fila_real, column=columna)
             valor_anterior = celda.value
             
-            # ACTUALIZAR VALOR
             celda.value = valor_convertido
-            
-            # COPIAR FORMATO DE NÚMERO (esto hace que se vea "500.00 €")
             celda.number_format = formato['number_format']
-            
-            # COPIAR FUENTE (negrita, etc.)
             celda.font = Font(
                 bold=formato['bold'],
                 name=formato['font_name'] or 'Calibri',
                 size=formato['font_size'] or 11
             )
             
-            # Añadir comentario con timestamp
             comentario = f"Modificado: {datetime.now().strftime('%d/%m/%Y %H:%M')}\nAnterior: {valor_anterior}"
             celda.comment = Comment(comentario, "Bot")
             
@@ -359,6 +451,49 @@ class ModificadorViajesRuta:
             logger.error(f"[MOD_RUTA] Error actualizando Excel: {e}")
             import traceback
             logger.error(traceback.format_exc())
+            return False
+    
+    def _actualizar_excel_cargas_descargas(self, fila: int, conductor: dict) -> bool:
+        """Actualiza cargas, descargas y observaciones completas en Excel."""
+        from openpyxl.styles import Font
+        
+        try:
+            wb = openpyxl.load_workbook(self.excel_path)
+            ws = wb.active
+            
+            fila_real = fila + 1
+            
+            cargas = conductor.get('cargas', [])
+            descargas = conductor.get('descargas', [])
+            
+            # Columna 14: Carga principal + comentario
+            if cargas:
+                ws.cell(row=fila_real, column=14, value=cargas[0])
+                ws.cell(row=fila_real, column=14).comment = None
+                if len(cargas) > 1:
+                    texto = _generar_comentario_cargas(cargas)
+                    ws.cell(row=fila_real, column=14).comment = Comment(texto, "Bot")
+            
+            # Columna 17: Descarga principal + comentario
+            if descargas:
+                ws.cell(row=fila_real, column=17, value=descargas[0])
+                ws.cell(row=fila_real, column=17).comment = None
+                if len(descargas) > 1:
+                    texto = _generar_comentario_descargas(descargas)
+                    ws.cell(row=fila_real, column=17).comment = Comment(texto, "Bot")
+            
+            # Columna 28: Observaciones con todas las cargas/descargas
+            observaciones = _generar_observaciones_ruta(conductor)
+            ws.cell(row=fila_real, column=28, value=observaciones)
+            
+            wb.save(self.excel_path)
+            wb.close()
+            
+            logger.info(f"[MOD_RUTA] Excel cargas/descargas actualizadas: fila {fila_real}, {len(cargas)}C/{len(descargas)}D")
+            return True
+            
+        except Exception as e:
+            logger.error(f"[MOD_RUTA] Error actualizando cargas/descargas Excel: {e}")
             return False
     
     def _actualizar_bd(self, viaje_id: int, campo: str, valor) -> bool:
@@ -378,18 +513,11 @@ class ModificadorViajesRuta:
     
     def _sync_to_drive(self) -> bool:
         """Sincroniza el Excel con Google Drive"""
-        logger.info(f"[MOD_RUTA] Intentando sincronizar con Drive...")
-        logger.info(f"[MOD_RUTA] subir_drive existe: {self.subir_drive is not None}")
-        
         if self.subir_drive:
             try:
-                logger.info("[MOD_RUTA] Llamando a subir_drive()...")
                 result = self.subir_drive()
-                logger.info(f"[MOD_RUTA] Resultado subir_drive: {result}")
                 if result:
                     logger.info("[MOD_RUTA] ✅ Excel sincronizado con Drive")
-                else:
-                    logger.error("[MOD_RUTA] ❌ subir_drive devolvió False")
                 return result
             except Exception as e:
                 logger.error(f"[MOD_RUTA] Error sincronizando: {e}")
@@ -406,7 +534,6 @@ class ModificadorViajesRuta:
         """Envía notificación al conductor"""
         if not self.bot or not telegram_id:
             return False
-        
         try:
             await self.bot.send_message(
                 chat_id=telegram_id,
@@ -427,10 +554,18 @@ class ModificadorViajesRuta:
         mensaje += "📝 *Cambios realizados:*\n"
         
         for campo, valores in cambios.items():
-            nombre_campo = self.campos_viaje.get(campo, (campo, campo))[1]
-            mensaje += f"\n{nombre_campo}:\n"
-            mensaje += f"   ❌ Antes: {valores['anterior']}\n"
-            mensaje += f"   ✅ Ahora: {valores['nuevo']}\n"
+            if campo in ('cargas', 'descargas'):
+                emoji = "📍"
+                nombre = "Cargas" if campo == 'cargas' else "Descargas"
+                mensaje += f"\n{emoji} {nombre}:\n"
+                mensaje += f"   ✅ Ahora: {', '.join(valores.get('nuevo', []))}\n"
+            else:
+                nombre_campo = self.campos_viaje.get(campo, (campo, campo))
+                if isinstance(nombre_campo, tuple):
+                    nombre_campo = nombre_campo[1]
+                mensaje += f"\n{nombre_campo}:\n"
+                mensaje += f"   ❌ Antes: {valores['anterior']}\n"
+                mensaje += f"   ✅ Ahora: {valores['nuevo']}\n"
         
         mensaje += "\n_Contacta con oficina si tienes dudas._"
         return mensaje
@@ -449,7 +584,6 @@ class ModificadorViajesRuta:
         
         context.user_data.clear()
         
-        # Crear botones de zonas
         keyboard = []
         for zona in ZONAS:
             keyboard.append([InlineKeyboardButton(zona, callback_data=f"zona_{zona}")])
@@ -471,7 +605,6 @@ class ModificadorViajesRuta:
         zona = query.data.replace("zona_", "")
         context.user_data['zona_seleccionada'] = zona
         
-        # Obtener conductores en ruta de esa zona
         conductores = self._obtener_conductores_en_ruta(zona)
         
         if not conductores:
@@ -484,7 +617,6 @@ class ModificadorViajesRuta:
         
         context.user_data['conductores'] = conductores
         
-        # Mostrar lista de conductores
         texto = f"🚛 *CONDUCTORES EN RUTA - {zona}*\n\n"
         keyboard = []
         
@@ -495,16 +627,18 @@ class ModificadorViajesRuta:
             carga = c.get('lugar_carga', '?')
             descarga = c.get('lugar_entrega', '?')
             estado_gps = c.get('estado_gps', '')
+            n_cargas = len(c.get('cargas', []))
+            n_descargas = len(c.get('descargas', []))
             
-            # Emoji según estado
             estado_emoji = "🟢" if estado_gps == 'en_ruta' else "🔵"
             
             texto += f"{estado_emoji} *{nombre}*\n"
             texto += f"   📞 {telefono}\n"
-            texto += f"   🚛 {carga} → {descarga}\n"
-            texto += f"   🏢 {cliente}\n\n"
+            texto += f"   🚛 {carga} → {descarga}"
+            if n_cargas > 1 or n_descargas > 1:
+                texto += f" ({n_cargas}C/{n_descargas}D)"
+            texto += f"\n   🏢 {cliente}\n\n"
             
-            # Botón con nombre resumido
             nombre_corto = nombre.split()[0] if nombre else f"Conductor {i+1}"
             keyboard.append([
                 InlineKeyboardButton(
@@ -536,11 +670,11 @@ class ModificadorViajesRuta:
             return ConversationHandler.END
         
         conductor = conductores[indice]
+        _inicializar_cargas_conductor(conductor)
         context.user_data['conductor_seleccionado'] = conductor
         context.user_data['cambios_pendientes'] = {}
         
-        # Mostrar detalle del viaje
-        texto = self._formatear_detalle_viaje(conductor)
+        texto = self._formatear_detalle_viaje(conductor, context.user_data.get('cambios_pendientes', {}))
         keyboard = self._get_keyboard_campos(conductor)
         
         await query.edit_message_text(
@@ -550,9 +684,10 @@ class ModificadorViajesRuta:
         )
         return MOD_RUTA_DETALLE
     
-    def _formatear_detalle_viaje(self, conductor: Dict) -> str:
-        """Formatea los detalles del viaje para mostrar"""
-        cambios = getattr(self, '_cambios_temp', {})
+    def _formatear_detalle_viaje(self, conductor: Dict, cambios: Dict = None) -> str:
+        """Formatea los detalles del viaje con todas las cargas/descargas"""
+        if cambios is None:
+            cambios = {}
         
         texto = "📋 *DETALLE DEL VIAJE*\n"
         texto += "═" * 25 + "\n\n"
@@ -568,33 +703,66 @@ class ModificadorViajesRuta:
         texto += f"🏢 *Cliente:* {conductor.get('cliente', 'N/A')}\n"
         texto += f"📦 *Mercancía:* {conductor.get('mercancia', 'N/A')}\n\n"
         
-        texto += f"📍 *Carga:* {conductor.get('lugar_carga', 'N/A')}\n"
-        texto += f"📍 *Descarga:* {conductor.get('lugar_entrega', 'N/A')}\n\n"
+        # Cargas (todas)
+        cargas = conductor.get('cargas', [])
+        texto += f"📥 *Cargas ({len(cargas)}):*\n"
+        for i, c in enumerate(cargas):
+            etiqueta = "Principal" if i == 0 else f"#{i+1}"
+            texto += f"   {etiqueta}: {c}\n"
+        if not cargas:
+            texto += "   _Sin cargas_\n"
+        texto += "\n"
+        
+        # Descargas (todas)
+        descargas = conductor.get('descargas', [])
+        texto += f"📤 *Descargas ({len(descargas)}):*\n"
+        for i, d in enumerate(descargas):
+            etiqueta = "Principal" if i == 0 else f"#{i+1}"
+            texto += f"   {etiqueta}: {d}\n"
+        if not descargas:
+            texto += "   _Sin descargas_\n"
+        texto += "\n"
         
         texto += f"📏 *Km:* {conductor.get('km', 'N/A')}\n"
         texto += f"💰 *Precio:* {conductor.get('precio', 'N/A')}€\n"
         
         if conductor.get('observaciones'):
-            texto += f"\n📝 *Obs:* {conductor.get('observaciones', '')[:100]}\n"
+            obs = conductor.get('observaciones', '')
+            # Limpiar códigos internos
+            obs_limpia = obs
+            for n in range(2, MAX_CARGAS + 1):
+                obs_limpia = re.sub(rf'\s*\|?\s*CARGA{n}:[^|]+', '', obs_limpia)
+            for n in range(2, MAX_DESCARGAS + 1):
+                obs_limpia = re.sub(rf'\s*\|?\s*DESCARGA{n}:[^|]+', '', obs_limpia)
+            obs_limpia = re.sub(r'\s*\|?\s*ZONA:[^|]+', '', obs_limpia).strip()
+            if obs_limpia:
+                texto += f"\n📝 *Obs:* {obs_limpia[:100]}\n"
         
-        # Mostrar cambios pendientes
-        cambios_pendientes = getattr(context, 'user_data', {}).get('cambios_pendientes', {}) if hasattr(self, 'context') else {}
-        if cambios_pendientes:
+        # Cambios pendientes
+        if cambios:
             texto += "\n" + "═" * 25 + "\n"
             texto += "⚠️ *CAMBIOS PENDIENTES:*\n"
-            for campo, valores in cambios_pendientes.items():
-                nombre = self.campos_viaje.get(campo, (campo, campo))[1]
-                texto += f"• {nombre}: {valores['nuevo']}\n"
+            for campo_key, valores in cambios.items():
+                if campo_key in ('cargas', 'descargas'):
+                    emoji = "📍"
+                    nombre = "Cargas" if campo_key == 'cargas' else "Descargas"
+                    nuevo = valores.get('nuevo', [])
+                    texto += f"• {emoji} {nombre}: {', '.join(nuevo)}\n"
+                else:
+                    texto += f"• {valores['nombre']}: `{valores['anterior']}` → `{valores['nuevo']}`\n"
         
-        texto += "\n_Selecciona un campo para modificar:_"
+        texto += "\n_Selecciona un campo para modificar o confirma:_"
         return texto
     
     def _get_keyboard_campos(self, conductor: Dict) -> InlineKeyboardMarkup:
         """Genera el teclado con campos modificables"""
+        cargas = conductor.get('cargas', [])
+        descargas = conductor.get('descargas', [])
+        
         keyboard = [
             [
-                InlineKeyboardButton("📍 Lugar Carga", callback_data="campo_1"),
-                InlineKeyboardButton("📍 Lugar Descarga", callback_data="campo_2"),
+                InlineKeyboardButton(f"📥 Cargas ({len(cargas)})", callback_data="campo_1"),
+                InlineKeyboardButton(f"📤 Descargas ({len(descargas)})", callback_data="campo_2"),
             ],
             [
                 InlineKeyboardButton("📦 Mercancía", callback_data="campo_3"),
@@ -613,18 +781,15 @@ class ModificadorViajesRuta:
                     callback_data=f"llamar_{conductor.get('telefono', '')}"
                 ),
             ],
+            [
+                InlineKeyboardButton("✅ Confirmar cambios", callback_data="confirmar_si"),
+                InlineKeyboardButton("⬅️ Volver", callback_data="volver_conductores"),
+            ],
         ]
-        
-        # Si hay cambios pendientes, añadir botón de confirmar
-        keyboard.append([
-            InlineKeyboardButton("✅ Confirmar cambios", callback_data="confirmar_si"),
-            InlineKeyboardButton("⬅️ Volver", callback_data="volver_conductores"),
-        ])
         
         return InlineKeyboardMarkup(keyboard)
     
     def _get_keyboard_zonas(self) -> InlineKeyboardMarkup:
-        """Genera el teclado de zonas"""
         keyboard = []
         for zona in ZONAS:
             keyboard.append([InlineKeyboardButton(zona, callback_data=f"zona_{zona}")])
@@ -644,6 +809,13 @@ class ModificadorViajesRuta:
             return MOD_RUTA_DETALLE
         
         campo_key, campo_nombre = campo_info
+        
+        # Si es cargas o descargas, abrir submenú de gestión
+        if campo_key == 'cargas':
+            return await self._ruta_mostrar_cargas_menu(update, context)
+        elif campo_key == 'descargas':
+            return await self._ruta_mostrar_descargas_menu(update, context)
+        
         context.user_data['campo_editando'] = num_campo
         context.user_data['campo_key'] = campo_key
         context.user_data['campo_nombre'] = campo_nombre
@@ -671,7 +843,6 @@ class ModificadorViajesRuta:
         conductor = context.user_data.get('conductor_seleccionado', {})
         valor_anterior = conductor.get(campo_key, '')
         
-        # Guardar en cambios pendientes
         if 'cambios_pendientes' not in context.user_data:
             context.user_data['cambios_pendientes'] = {}
         
@@ -681,7 +852,6 @@ class ModificadorViajesRuta:
             'nombre': campo_nombre
         }
         
-        # Actualizar también en el conductor para mostrar
         conductor[campo_key] = nuevo_valor
         
         await update.message.reply_text(
@@ -690,8 +860,9 @@ class ModificadorViajesRuta:
             parse_mode="Markdown"
         )
         
-        # Mostrar detalle actualizado
-        texto = self._formatear_detalle_viaje_con_cambios(conductor, context.user_data.get('cambios_pendientes', {}))
+        # Volver al detalle
+        cambios = context.user_data.get('cambios_pendientes', {})
+        texto = self._formatear_detalle_viaje(conductor, cambios)
         keyboard = self._get_keyboard_campos(conductor)
         
         await update.message.reply_text(
@@ -701,40 +872,380 @@ class ModificadorViajesRuta:
         )
         return MOD_RUTA_DETALLE
     
-    def _formatear_detalle_viaje_con_cambios(self, conductor: Dict, cambios: Dict) -> str:
-        """Formatea los detalles del viaje incluyendo cambios pendientes"""
-        texto = "📋 *DETALLE DEL VIAJE*\n"
-        texto += "═" * 25 + "\n\n"
+    async def llamar_conductor(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Muestra teléfono del conductor"""
+        query = update.callback_query
+        telefono = query.data.replace("llamar_", "")
         
-        texto += f"👤 *Conductor:* {conductor.get('nombre', 'N/A')}\n"
-        texto += f"📞 *Teléfono:* {conductor.get('telefono', 'Sin teléfono')}\n"
-        texto += f"🚛 *Tractora:* {conductor.get('tractora', 'N/A')}\n\n"
+        if not telefono or telefono == "None":
+            await query.answer("❌ No hay teléfono registrado", show_alert=True)
+            return MOD_RUTA_DETALLE
         
-        texto += "─" * 25 + "\n"
-        texto += "*VIAJE ACTUAL*\n"
-        texto += "─" * 25 + "\n\n"
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        nombre = conductor.get('nombre', 'Conductor')
         
-        texto += f"🏢 *Cliente:* {conductor.get('cliente', 'N/A')}\n"
-        texto += f"📦 *Mercancía:* {conductor.get('mercancia', 'N/A')}\n\n"
+        await query.answer(f"📞 {telefono}", show_alert=True)
         
-        texto += f"📍 *Carga:* {conductor.get('lugar_carga', 'N/A')}\n"
-        texto += f"📍 *Descarga:* {conductor.get('lugar_entrega', 'N/A')}\n\n"
+        await query.message.reply_text(
+            f"📞 *LLAMAR A {nombre}*\n\n"
+            f"Teléfono: `{telefono}`\n\n"
+            f"[Llamar](tel:{telefono})",
+            parse_mode="Markdown"
+        )
+        return MOD_RUTA_DETALLE
+    
+    # ============================================================
+    # GESTIÓN DE CARGAS EN RUTA
+    # ============================================================
+    
+    async def _ruta_mostrar_cargas_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Muestra menú de gestión de cargas"""
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        _inicializar_cargas_conductor(conductor)
+        cargas = conductor.get('cargas', [])
+        n = len(cargas)
         
-        texto += f"📏 *Km:* {conductor.get('km', 'N/A')}\n"
-        texto += f"💰 *Precio:* {conductor.get('precio', 'N/A')}€\n"
+        mensaje = f"📥 *GESTIÓN DE CARGAS* ({n}/{MAX_CARGAS})\n━━━━━━━━━━━━━━━━━━━━\n"
+        if cargas:
+            for i, c in enumerate(cargas):
+                etiqueta = "Principal" if i == 0 else f"#{i+1}"
+                mensaje += f"*{i+1}.* 📥 {etiqueta}: *{c}*\n"
+        else:
+            mensaje += "_Sin cargas definidas_\n"
         
-        if conductor.get('observaciones'):
-            texto += f"\n📝 *Obs:* {conductor.get('observaciones', '')[:100]}\n"
+        mensaje += "━━━━━━━━━━━━━━━━━━━━\n\n"
+        mensaje += "Escribe un *número* para editar esa carga"
         
-        # Mostrar cambios pendientes
-        if cambios:
-            texto += "\n" + "═" * 25 + "\n"
-            texto += "⚠️ *CAMBIOS PENDIENTES:*\n"
-            for campo_key, valores in cambios.items():
-                texto += f"• {valores['nombre']}: `{valores['anterior']}` → `{valores['nuevo']}`\n"
+        botones = []
+        if n < MAX_CARGAS:
+            botones.append("➕ Añadir carga")
+        if n > 1:
+            botones.append("🗑️ Eliminar carga")
         
-        texto += "\n_Selecciona un campo para modificar o confirma:_"
-        return texto
+        keyboard = []
+        if botones:
+            keyboard.append(botones)
+        keyboard.append(["⬅️ Volver"])
+        
+        # Responder según si viene de CallbackQuery o Message
+        if update.callback_query:
+            await update.callback_query.message.reply_text(
+                mensaje, parse_mode="Markdown",
+                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            )
+        else:
+            await update.message.reply_text(
+                mensaje, parse_mode="Markdown",
+                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            )
+        return MOD_RUTA_CARGAS_MENU
+    
+    async def _ruta_cargas_seleccionar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Selecciona carga a editar por número"""
+        texto = update.message.text.strip()
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        cargas = conductor.get('cargas', [])
+        
+        try:
+            num = int(texto)
+            if num < 1 or num > len(cargas):
+                await update.message.reply_text(f"⚠️ Número del 1 al {len(cargas)}:")
+                return MOD_RUTA_CARGAS_MENU
+            
+            context.user_data['_editando_carga_idx'] = num - 1
+            keyboard = [["⬅️ Volver", "❌ Cancelar"]]
+            await update.message.reply_text(
+                f"✏️ *EDITAR CARGA #{num}*\n\n"
+                f"Valor actual: *{cargas[num-1]}*\n\n"
+                "Escribe el nuevo lugar de carga:",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            )
+            return MOD_RUTA_CARGAS_EDITAR
+        except ValueError:
+            await update.message.reply_text("⚠️ Introduce un número válido:")
+            return MOD_RUTA_CARGAS_MENU
+    
+    async def _ruta_cargas_guardar_edicion(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Guarda edición de carga"""
+        nuevo_valor = update.message.text.strip().upper()
+        idx = context.user_data.get('_editando_carga_idx', 0)
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        
+        if idx == -1:
+            # Nueva carga
+            conductor.setdefault('cargas', []).append(nuevo_valor)
+            await update.message.reply_text(f"✅ Carga *{nuevo_valor}* añadida.", parse_mode="Markdown")
+        else:
+            conductor['cargas'][idx] = nuevo_valor
+            await update.message.reply_text(f"✅ Carga #{idx+1} actualizada a *{nuevo_valor}*", parse_mode="Markdown")
+        
+        _sync_compat_conductor(conductor)
+        
+        # Marcar cambio pendiente
+        if 'cambios_pendientes' not in context.user_data:
+            context.user_data['cambios_pendientes'] = {}
+        context.user_data['cambios_pendientes']['cargas'] = {
+            'nombre': '📍 Cargas',
+            'nuevo': conductor.get('cargas', [])
+        }
+        
+        return await self._ruta_mostrar_cargas_menu(update, context)
+    
+    async def _ruta_cargas_añadir(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Añadir nueva carga"""
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        cargas = conductor.get('cargas', [])
+        if len(cargas) >= MAX_CARGAS:
+            await update.message.reply_text(f"⚠️ Máximo de {MAX_CARGAS} cargas alcanzado.")
+            return MOD_RUTA_CARGAS_MENU
+        
+        n = len(cargas)
+        keyboard = [["⬅️ Volver", "❌ Cancelar"]]
+        await update.message.reply_text(
+            f"📥 *NUEVA CARGA #{n+1}*\n\nEscribe el lugar de carga:",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
+        context.user_data['_editando_carga_idx'] = -1
+        return MOD_RUTA_CARGAS_EDITAR
+    
+    async def _ruta_cargas_pedir_eliminar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Pide qué carga eliminar"""
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        cargas = conductor.get('cargas', [])
+        if len(cargas) <= 1:
+            await update.message.reply_text("⚠️ Debe haber al menos 1 carga.")
+            return MOD_RUTA_CARGAS_MENU
+        
+        mensaje = f"🗑️ *¿Qué carga eliminar?* (2-{len(cargas)})\n\n"
+        mensaje += "_Nota: la carga #1 (principal) no se puede eliminar_\n\n"
+        for i, c in enumerate(cargas):
+            mensaje += f"*{i+1}.* {c}\n"
+        
+        keyboard = [["⬅️ Volver"]]
+        await update.message.reply_text(
+            mensaje, parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
+        return MOD_RUTA_CARGAS_ELIMINAR
+    
+    async def _ruta_cargas_confirmar_eliminar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Confirma eliminación de carga"""
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        cargas = conductor.get('cargas', [])
+        try:
+            num = int(update.message.text.strip())
+            if num < 2 or num > len(cargas):
+                await update.message.reply_text(f"⚠️ Número del 2 al {len(cargas)}:")
+                return MOD_RUTA_CARGAS_ELIMINAR
+            
+            eliminada = cargas.pop(num - 1)
+            _sync_compat_conductor(conductor)
+            
+            if 'cambios_pendientes' not in context.user_data:
+                context.user_data['cambios_pendientes'] = {}
+            context.user_data['cambios_pendientes']['cargas'] = {
+                'nombre': '📍 Cargas',
+                'nuevo': conductor.get('cargas', [])
+            }
+            
+            await update.message.reply_text(f"✅ Carga *{eliminada}* eliminada.", parse_mode="Markdown")
+            return await self._ruta_mostrar_cargas_menu(update, context)
+        except ValueError:
+            await update.message.reply_text("⚠️ Introduce un número:")
+            return MOD_RUTA_CARGAS_ELIMINAR
+    
+    async def _ruta_cargas_volver(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Volver al detalle desde cargas"""
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        cambios = context.user_data.get('cambios_pendientes', {})
+        
+        texto = self._formatear_detalle_viaje(conductor, cambios)
+        keyboard = self._get_keyboard_campos(conductor)
+        
+        await update.message.reply_text(
+            texto, parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+        return MOD_RUTA_DETALLE
+    
+    # ============================================================
+    # GESTIÓN DE DESCARGAS EN RUTA
+    # ============================================================
+    
+    async def _ruta_mostrar_descargas_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Muestra menú de gestión de descargas"""
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        _inicializar_cargas_conductor(conductor)
+        descargas = conductor.get('descargas', [])
+        n = len(descargas)
+        
+        mensaje = f"📤 *GESTIÓN DE DESCARGAS* ({n}/{MAX_DESCARGAS})\n━━━━━━━━━━━━━━━━━━━━\n"
+        if descargas:
+            for i, d in enumerate(descargas):
+                etiqueta = "Principal" if i == 0 else f"#{i+1}"
+                mensaje += f"*{i+1}.* 📤 {etiqueta}: *{d}*\n"
+        else:
+            mensaje += "_Sin descargas definidas_\n"
+        
+        mensaje += "━━━━━━━━━━━━━━━━━━━━\n\n"
+        mensaje += "Escribe un *número* para editar esa descarga"
+        
+        botones = []
+        if n < MAX_DESCARGAS:
+            botones.append("➕ Añadir descarga")
+        if n > 1:
+            botones.append("🗑️ Eliminar descarga")
+        
+        keyboard = []
+        if botones:
+            keyboard.append(botones)
+        keyboard.append(["⬅️ Volver"])
+        
+        if update.callback_query:
+            await update.callback_query.message.reply_text(
+                mensaje, parse_mode="Markdown",
+                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            )
+        else:
+            await update.message.reply_text(
+                mensaje, parse_mode="Markdown",
+                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            )
+        return MOD_RUTA_DESCARGAS_MENU
+    
+    async def _ruta_descargas_seleccionar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Selecciona descarga a editar por número"""
+        texto = update.message.text.strip()
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        descargas = conductor.get('descargas', [])
+        
+        try:
+            num = int(texto)
+            if num < 1 or num > len(descargas):
+                await update.message.reply_text(f"⚠️ Número del 1 al {len(descargas)}:")
+                return MOD_RUTA_DESCARGAS_MENU
+            
+            context.user_data['_editando_descarga_idx'] = num - 1
+            keyboard = [["⬅️ Volver", "❌ Cancelar"]]
+            await update.message.reply_text(
+                f"✏️ *EDITAR DESCARGA #{num}*\n\n"
+                f"Valor actual: *{descargas[num-1]}*\n\n"
+                "Escribe el nuevo lugar de descarga:",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            )
+            return MOD_RUTA_DESCARGAS_EDITAR
+        except ValueError:
+            await update.message.reply_text("⚠️ Introduce un número válido:")
+            return MOD_RUTA_DESCARGAS_MENU
+    
+    async def _ruta_descargas_guardar_edicion(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Guarda edición de descarga"""
+        nuevo_valor = update.message.text.strip().upper()
+        idx = context.user_data.get('_editando_descarga_idx', 0)
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        
+        if idx == -1:
+            conductor.setdefault('descargas', []).append(nuevo_valor)
+            await update.message.reply_text(f"✅ Descarga *{nuevo_valor}* añadida.", parse_mode="Markdown")
+        else:
+            conductor['descargas'][idx] = nuevo_valor
+            await update.message.reply_text(f"✅ Descarga #{idx+1} actualizada a *{nuevo_valor}*", parse_mode="Markdown")
+        
+        _sync_compat_conductor(conductor)
+        
+        if 'cambios_pendientes' not in context.user_data:
+            context.user_data['cambios_pendientes'] = {}
+        context.user_data['cambios_pendientes']['descargas'] = {
+            'nombre': '📍 Descargas',
+            'nuevo': conductor.get('descargas', [])
+        }
+        
+        return await self._ruta_mostrar_descargas_menu(update, context)
+    
+    async def _ruta_descargas_añadir(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Añadir nueva descarga"""
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        descargas = conductor.get('descargas', [])
+        if len(descargas) >= MAX_DESCARGAS:
+            await update.message.reply_text(f"⚠️ Máximo de {MAX_DESCARGAS} descargas alcanzado.")
+            return MOD_RUTA_DESCARGAS_MENU
+        
+        n = len(descargas)
+        keyboard = [["⬅️ Volver", "❌ Cancelar"]]
+        await update.message.reply_text(
+            f"📤 *NUEVA DESCARGA #{n+1}*\n\nEscribe el lugar de descarga:",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
+        context.user_data['_editando_descarga_idx'] = -1
+        return MOD_RUTA_DESCARGAS_EDITAR
+    
+    async def _ruta_descargas_pedir_eliminar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Pide qué descarga eliminar"""
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        descargas = conductor.get('descargas', [])
+        if len(descargas) <= 1:
+            await update.message.reply_text("⚠️ Debe haber al menos 1 descarga.")
+            return MOD_RUTA_DESCARGAS_MENU
+        
+        mensaje = f"🗑️ *¿Qué descarga eliminar?* (2-{len(descargas)})\n\n"
+        mensaje += "_Nota: la descarga #1 (principal) no se puede eliminar_\n\n"
+        for i, d in enumerate(descargas):
+            mensaje += f"*{i+1}.* {d}\n"
+        
+        keyboard = [["⬅️ Volver"]]
+        await update.message.reply_text(
+            mensaje, parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
+        return MOD_RUTA_DESCARGAS_ELIMINAR
+    
+    async def _ruta_descargas_confirmar_eliminar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Confirma eliminación de descarga"""
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        descargas = conductor.get('descargas', [])
+        try:
+            num = int(update.message.text.strip())
+            if num < 2 or num > len(descargas):
+                await update.message.reply_text(f"⚠️ Número del 2 al {len(descargas)}:")
+                return MOD_RUTA_DESCARGAS_ELIMINAR
+            
+            eliminada = descargas.pop(num - 1)
+            _sync_compat_conductor(conductor)
+            
+            if 'cambios_pendientes' not in context.user_data:
+                context.user_data['cambios_pendientes'] = {}
+            context.user_data['cambios_pendientes']['descargas'] = {
+                'nombre': '📍 Descargas',
+                'nuevo': conductor.get('descargas', [])
+            }
+            
+            await update.message.reply_text(f"✅ Descarga *{eliminada}* eliminada.", parse_mode="Markdown")
+            return await self._ruta_mostrar_descargas_menu(update, context)
+        except ValueError:
+            await update.message.reply_text("⚠️ Introduce un número:")
+            return MOD_RUTA_DESCARGAS_ELIMINAR
+    
+    async def _ruta_descargas_volver(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Volver al detalle desde descargas"""
+        conductor = context.user_data.get('conductor_seleccionado', {})
+        cambios = context.user_data.get('cambios_pendientes', {})
+        
+        texto = self._formatear_detalle_viaje(conductor, cambios)
+        keyboard = self._get_keyboard_campos(conductor)
+        
+        await update.message.reply_text(
+            texto, parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+        return MOD_RUTA_DETALLE
+    
+    # ============================================================
+    # CONFIRMAR Y APLICAR CAMBIOS
+    # ============================================================
     
     async def confirmar_cambios(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Confirma y aplica todos los cambios"""
@@ -754,9 +1265,14 @@ class ModificadorViajesRuta:
         nombre_conductor = conductor.get('nombre', '')
         telegram_id = conductor.get('telegram_id') or self._obtener_telegram_id_conductor(nombre_conductor)
         
-        # Aplicar cambios al Excel y BD
         errores = []
+        hay_cambio_cargas = False
+        
         for campo_key, valores in cambios.items():
+            if campo_key in ('cargas', 'descargas'):
+                hay_cambio_cargas = True
+                continue  # Se procesan aparte
+            
             # Actualizar Excel
             if fila_excel:
                 if not self._actualizar_excel(fila_excel, campo_key, valores['nuevo']):
@@ -767,61 +1283,56 @@ class ModificadorViajesRuta:
                 if not self._actualizar_bd(viaje_id, campo_key, valores['nuevo']):
                     errores.append(f"BD: {campo_key}")
         
-        # Sincronizar con Drive
+        # Si hubo cambios en cargas/descargas, actualizar Excel completo
+        if hay_cambio_cargas and fila_excel:
+            if not self._actualizar_excel_cargas_descargas(fila_excel, conductor):
+                errores.append("Excel: cargas/descargas")
+            
+            # Actualizar campos legacy en BD
+            if viaje_id:
+                _sync_compat_conductor(conductor)
+                self._actualizar_bd(viaje_id, 'lugar_carga', conductor.get('lugar_carga', ''))
+                self._actualizar_bd(viaje_id, 'lugar_entrega', conductor.get('lugar_entrega', ''))
+                obs = _generar_observaciones_ruta(conductor)
+                self._actualizar_bd(viaje_id, 'observaciones', obs)
+        
+        # Sync Drive
         drive_ok = self._sync_to_drive()
         
         # Notificar al conductor
-        notificacion_ok = False
+        notificado = False
         if telegram_id:
-            mensaje = self._generar_mensaje_modificacion(nombre_conductor, cambios)
-            notificacion_ok = await self._notificar_conductor(telegram_id, mensaje)
+            mensaje_notif = self._generar_mensaje_modificacion(nombre_conductor, cambios)
+            notificado = await self._notificar_conductor(telegram_id, mensaje_notif)
         
-        # Generar resumen
-        texto = "✅ *CAMBIOS APLICADOS*\n\n"
-        texto += f"👤 Conductor: {nombre_conductor}\n"
-        texto += f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-        
-        texto += "*Cambios realizados:*\n"
-        for campo_key, valores in cambios.items():
-            texto += f"• {valores['nombre']}: `{valores['nuevo']}`\n"
-        
-        texto += "\n*Estado:*\n"
-        texto += f"• Excel: {'✅' if not errores else '⚠️'}\n"
-        texto += f"• Google Drive: {'✅' if drive_ok else '❌'}\n"
-        texto += f"• Notificación: {'✅ Enviada' if notificacion_ok else '⚠️ No enviada (sin Telegram)'}\n"
-        
+        # Mensaje al admin
         if errores:
-            texto += f"\n⚠️ Errores: {', '.join(errores)}"
+            msg = f"⚠️ Cambios aplicados con errores:\n" + "\n".join(errores)
+        else:
+            n_cargas = len(conductor.get('cargas', []))
+            n_descargas = len(conductor.get('descargas', []))
+            
+            msg = f"✅ *¡VIAJE MODIFICADO!*\n\n"
+            msg += f"👤 {nombre_conductor}\n"
+            msg += f"📥 Cargas: {n_cargas} | 📤 Descargas: {n_descargas}\n"
+            msg += f"📝 {len(cambios)} campo(s) modificado(s)\n\n"
+            msg += "☁️ _Drive sincronizado_\n" if drive_ok else "⚠️ _Error sincronizando Drive_\n"
+            msg += "📲 _Conductor notificado_" if notificado else "⚠️ _No se pudo notificar_"
         
-        await query.edit_message_text(texto, parse_mode="Markdown")
+        from teclados import teclado_admin
         
-        # Limpiar datos
+        await query.message.reply_text(
+            msg,
+            parse_mode="Markdown",
+            reply_markup=teclado_admin
+        )
+        
         context.user_data.clear()
-        
         return ConversationHandler.END
     
-    async def llamar_conductor(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Muestra el teléfono del conductor para llamar"""
-        query = update.callback_query
-        telefono = query.data.replace("llamar_", "")
-        
-        if not telefono or telefono == "None":
-            await query.answer("❌ No hay teléfono registrado", show_alert=True)
-            return MOD_RUTA_DETALLE
-        
-        conductor = context.user_data.get('conductor_seleccionado', {})
-        nombre = conductor.get('nombre', 'Conductor')
-        
-        await query.answer(f"📞 {telefono}", show_alert=True)
-        
-        # Enviar mensaje con el teléfono clickeable
-        await query.message.reply_text(
-            f"📞 *LLAMAR A {nombre}*\n\n"
-            f"Teléfono: `{telefono}`\n\n"
-            f"[Llamar](tel:{telefono})",
-            parse_mode="Markdown"
-        )
-        return MOD_RUTA_DETALLE
+    # ============================================================
+    # NAVEGACIÓN
+    # ============================================================
     
     async def volver_zonas(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Vuelve a la selección de zonas"""
@@ -829,8 +1340,7 @@ class ModificadorViajesRuta:
         await query.answer()
         
         await query.edit_message_text(
-            "🔄 *MODIFICAR VIAJE EN RUTA*\n\n"
-            "Selecciona la zona:",
+            "🔄 *MODIFICAR VIAJE EN RUTA*\n\nSelecciona la zona:",
             parse_mode="Markdown",
             reply_markup=self._get_keyboard_zonas()
         )
@@ -852,7 +1362,6 @@ class ModificadorViajesRuta:
             )
             return MOD_RUTA_ZONA
         
-        # Mostrar lista
         texto = f"🚛 *CONDUCTORES EN RUTA - {zona}*\n\n"
         keyboard = []
         
@@ -861,9 +1370,14 @@ class ModificadorViajesRuta:
             telefono = c.get('telefono', 'Sin teléfono')
             carga = c.get('lugar_carga', '?')
             descarga = c.get('lugar_entrega', '?')
+            n_cargas = len(c.get('cargas', []))
+            n_descargas = len(c.get('descargas', []))
             
             texto += f"• *{nombre}* - 📞 {telefono}\n"
-            texto += f"   🚛 {carga} → {descarga}\n\n"
+            texto += f"   🚛 {carga} → {descarga}"
+            if n_cargas > 1 or n_descargas > 1:
+                texto += f" ({n_cargas}C/{n_descargas}D)"
+            texto += "\n\n"
             
             nombre_corto = nombre.split()[0] if nombre else f"Conductor {i+1}"
             keyboard.append([
@@ -884,7 +1398,6 @@ class ModificadorViajesRuta:
     
     async def volver_detalle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Vuelve al detalle del viaje"""
-        # Puede venir de CallbackQuery o Message
         if update.callback_query:
             query = update.callback_query
             await query.answer()
@@ -895,7 +1408,7 @@ class ModificadorViajesRuta:
         conductor = context.user_data.get('conductor_seleccionado', {})
         cambios = context.user_data.get('cambios_pendientes', {})
         
-        texto = self._formatear_detalle_viaje_con_cambios(conductor, cambios)
+        texto = self._formatear_detalle_viaje(conductor, cambios)
         keyboard = self._get_keyboard_campos(conductor)
         
         if update.callback_query:
@@ -913,7 +1426,7 @@ class ModificadorViajesRuta:
         return MOD_RUTA_DETALLE
     
     async def cancelar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Cancela la operación y devuelve el teclado de admin"""
+        """Cancela la operación"""
         context.user_data.clear()
         
         from teclados import teclado_admin
