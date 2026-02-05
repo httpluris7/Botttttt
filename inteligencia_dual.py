@@ -94,21 +94,60 @@ def simular_horarios(viaje: Dict, indice_viaje: int = 0) -> Dict:
         "hora_descarga": hora_descarga.strftime("%H:%M"),
     }
 
-def chat_libre(mensaje: str, nombre: str = "") -> str:
+ASSISTANT_ID = "asst_DmmRrep6S45qhxWJ4TeUofaG"
+
+# Historial de threads por usuario para mantener contexto
+_threads_usuarios = {}
+
+def chat_libre(mensaje: str, nombre: str = "", telegram_id: int = None) -> str:
+    """Chat usando el Assistant de OpenAI para consultas de transporte"""
     try:
         nombre_corto = nombre.split()[0] if nombre else "compañero"
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": f"Eres un asistente amigable para conductores de camión. Hablas con {nombre_corto}. Sé breve y usa emojis."},
-                {"role": "user", "content": mensaje}
-            ],
-            temperature=0.8,
-            max_tokens=150
+        
+        # Reutilizar thread si el usuario ya tiene uno (mantiene contexto)
+        thread_id = _threads_usuarios.get(telegram_id)
+        
+        if thread_id:
+            try:
+                # Verificar que el thread sigue válido
+                client.beta.threads.retrieve(thread_id)
+            except Exception:
+                thread_id = None
+        
+        if not thread_id:
+            thread = client.beta.threads.create()
+            thread_id = thread.id
+            if telegram_id:
+                _threads_usuarios[telegram_id] = thread_id
+        
+        # Añadir mensaje del usuario
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=f"[Conductor: {nombre_corto}] {mensaje}"
         )
-        return response.choices[0].message.content.strip()
+        
+        # Ejecutar el Assistant
+        run = client.beta.threads.runs.create_and_poll(
+            thread_id=thread_id,
+            assistant_id=ASSISTANT_ID,
+            timeout=30
+        )
+        
+        if run.status == "completed":
+            messages = client.beta.threads.messages.list(
+                thread_id=thread_id,
+                limit=1,
+                order="desc"
+            )
+            respuesta = messages.data[0].content[0].text.value
+            return respuesta
+        else:
+            logger.error(f"Assistant run status: {run.status}")
+            return "🤖 Perdona, no he podido procesar tu consulta. Inténtalo de nuevo."
+    
     except Exception as e:
-        logger.error(f"Error chat_libre: {e}")
+        logger.error(f"Error chat_libre (Assistant): {e}")
         return "🤖 Perdona, ¿qué me decías?"
 
 
@@ -400,11 +439,11 @@ class InteligenciaDual:
                 viajes = self.obtener_mis_viajes(nombre)
                 return (f"📊 TU RESUMEN\n\n👤 {nombre}\n🚛 {tractora or 'N/A'}\n📦 Viajes: {len(viajes)}", None)
         
-        # === NO ENTENDIDO → CHAT LIBRE ===
+        # === NO ENTENDIDO → ASSISTANT TRANSPORTE ===
         if intencion == 'no_entendido' or confianza < 0.5:
-            return (chat_libre(mensaje, nombre), None)
+            return (chat_libre(mensaje, nombre, telegram_id), None)
         
-        return (chat_libre(mensaje, nombre), None)
+        return (chat_libre(mensaje, nombre, telegram_id), None)
     
     # Método legacy para compatibilidad (sin tupla)
     def responder_simple(self, telegram_id: int, mensaje: str, conductor: Dict, es_admin: bool = False) -> str:
