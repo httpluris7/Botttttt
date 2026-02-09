@@ -24,7 +24,8 @@ from telegram import ReplyKeyboardMarkup, KeyboardButton
 BOTONES_CONDUCTOR = [
     ["🚛 Mis viajes", "🚚 Mi camión"],
     ["⛽ Gasolineras", "📍 Mi ubicación"],
-    ["📝 Registros", "📊 Resumen"]
+    ["📝 Registros", "⚠️ Incidencia"],
+    ["📊 Resumen"]
 ]
 
 teclado_conductor = ReplyKeyboardMarkup(
@@ -131,6 +132,7 @@ MAPEO_BOTONES = {
     "📍 Mi ubicación": "mi_ubicacion",
     "🚚 Mi camión": "mi_camion",
     "📝 Registros": "registros",
+    "⚠️ Incidencia": "incidencia",
     "📊 Resumen": "resumen",
     
     # Admin - Menú principal

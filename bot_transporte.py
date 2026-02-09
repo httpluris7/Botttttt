@@ -66,6 +66,7 @@ from asignador_viajes import inicializar_asignador, obtener_asignador
 from gestiones_manager import GestionesManager
 from modificador_viajes_ruta import ModificadorViajesRuta
 from registros_conductor import crear_registros_conductor
+from incidencias_conductor import crear_incidencias_conductor
 
 gestiones_manager = None
 modificador_ruta = None
@@ -2054,6 +2055,15 @@ def main():
     )
     app.add_handler(registros.get_conversation_handler())
     logger.info("✅ Registros conductor")
+    
+    # Incidencias de conductor
+    incidencias = crear_incidencias_conductor(
+        config.DB_PATH,
+        app.bot,
+        config.ADMIN_IDS
+    )
+    app.add_handler(incidencias.get_conversation_handler())
+    logger.info("✅ Incidencias conductor")
     
     # Handlers para callbacks de rutas (ADMIN)
     app.add_handler(CallbackQueryHandler(callback_ver_rutas, pattern="^rutas:(?!volver)"))

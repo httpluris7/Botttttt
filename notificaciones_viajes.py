@@ -96,6 +96,8 @@ class NotificadorViajes:
     
     def _generar_mensaje_viaje(self, viaje: Dict) -> str:
         """Genera el mensaje de notificación para un viaje nuevo"""
+        import urllib.parse
+        
         cliente = viaje.get('cliente', 'N/A')
         mercancia = viaje.get('mercancia', 'N/A')
         lugar_carga = viaje.get('lugar_carga', '?')
@@ -103,16 +105,33 @@ class NotificadorViajes:
         km = viaje.get('km', 0) or 0
         intercambio = viaje.get('intercambio', '')
         
-        mensaje = "🚛 NUEVO VIAJE ASIGNADO\n\n"
-        mensaje += f"📦 {cliente} - {mercancia}\n"
-        mensaje += f"📍 {lugar_carga} → {lugar_entrega}\n"
+        mensaje = "🚛 *NUEVO VIAJE ASIGNADO*\n\n"
+        mensaje += f"🏢 *{cliente}*\n"
+        mensaje += f"📦 {mercancia}\n"
         mensaje += f"📏 {km} km\n"
         
         # Mostrar si hay intercambio de palés
         if intercambio and str(intercambio).upper().strip() == 'SI':
             mensaje += f"🔄 Intercambio de palés\n"
         
-        mensaje += "\nPulsa \"🚛 Mis viajes\" para ver detalles"
+        # Carga
+        mensaje += f"\n{'─'*20}\n"
+        mensaje += f"📥 *CARGA*\n"
+        mensaje += f"📍 {lugar_carga}\n"
+        if lugar_carga and lugar_carga != '?':
+            link_maps = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(str(lugar_carga))}"
+            mensaje += f"🗺️ [Abrir en Maps]({link_maps})\n"
+        
+        # Descarga
+        mensaje += f"\n{'─'*20}\n"
+        mensaje += f"📤 *DESCARGA*\n"
+        mensaje += f"📍 {lugar_entrega}\n"
+        if lugar_entrega and lugar_entrega != '?':
+            link_maps = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(str(lugar_entrega))}"
+            mensaje += f"🗺️ [Abrir en Maps]({link_maps})\n"
+        
+        mensaje += f"\n{'─'*20}\n"
+        mensaje += "Pulsa *🚛 Mis viajes* para más detalles"
         
         return mensaje
     
@@ -176,7 +195,12 @@ class NotificadorViajes:
         mensaje = self._generar_mensaje_viaje(viaje)
         
         try:
-            await self.bot.send_message(chat_id=telegram_id, text=mensaje)
+            await self.bot.send_message(
+                chat_id=telegram_id, 
+                text=mensaje,
+                parse_mode="Markdown",
+                disable_web_page_preview=True
+            )
             logger.info(f"[NOTIFICADOR] Notificación enviada a {conductor} ({telegram_id})")
             return True
         except Exception as e:
