@@ -141,6 +141,120 @@ def sincronizar_bd() -> dict:
         return {"exito": False, "error": str(e)}
 
 
+def sincronizar_transportistas() -> dict:
+    """
+    Sincroniza la columna TRANSPORTISTA (V) del Excel con la BD.
+    
+    Bidireccional:
+    1. BD → Excel: Si viaje tiene conductor_asignado pero columna V vacía → Escribir
+    2. Excel → BD: Si columna V tiene nombre pero BD vacía → Actualizar BD
+    """
+    try:
+        import sqlite3
+        from openpyxl import load_workbook
+        
+        if not Path(EXCEL_EMPRESA).exists():
+            return {"exito": False, "error": "Excel no encontrado"}
+        
+        wb = load_workbook(EXCEL_EMPRESA)
+        ws = wb.active
+        
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Columna V = 22 en openpyxl
+        COL_TRANSPORTISTA = 22
+        
+        actualizados_excel = 0
+        actualizados_bd = 0
+        
+        # Obtener todos los viajes con fila_excel
+        cursor.execute("""
+            SELECT id, conductor_asignado, fila_excel 
+            FROM viajes_empresa 
+            WHERE fila_excel IS NOT NULL
+        """)
+        viajes = cursor.fetchall()
+        
+        for viaje in viajes:
+            viaje_id = viaje['id']
+            conductor_bd = (viaje['conductor_asignado'] or '').strip()
+            fila_excel = viaje['fila_excel']
+            
+            # fila_excel es 0-indexed, openpyxl es 1-indexed
+            fila_openpyxl = fila_excel + 1
+            
+            if fila_openpyxl > ws.max_row:
+                continue
+            
+            celda = ws.cell(row=fila_openpyxl, column=COL_TRANSPORTISTA)
+            transportista_excel = (str(celda.value) if celda.value else '').strip()
+            
+            # Caso 1: BD tiene conductor, Excel vacío → Escribir en Excel
+            if conductor_bd and not transportista_excel:
+                celda.value = conductor_bd
+                actualizados_excel += 1
+                logger.info(f"[SYNC] Excel fila {fila_openpyxl}: '{conductor_bd}'")
+            
+            # Caso 2: Excel tiene nombre, BD vacío → Actualizar BD
+            elif transportista_excel and not conductor_bd:
+                cursor.execute("""
+                    UPDATE viajes_empresa 
+                    SET conductor_asignado = ? 
+                    WHERE id = ?
+                """, (transportista_excel, viaje_id))
+                actualizados_bd += 1
+                logger.info(f"[SYNC] BD viaje {viaje_id}: '{transportista_excel}'")
+        
+        # Guardar cambios
+        if actualizados_excel > 0:
+            wb.save(EXCEL_EMPRESA)
+        wb.close()
+        
+        if actualizados_bd > 0:
+            conn.commit()
+        conn.close()
+        
+        return {
+            "exito": True,
+            "actualizados_excel": actualizados_excel,
+            "actualizados_bd": actualizados_bd
+        }
+        
+    except Exception as e:
+        logger.error(f"Error sincronizando transportistas: {e}")
+        return {"exito": False, "error": str(e)}
+
+
+def subir_excel_a_drive() -> bool:
+    """Sube el Excel actualizado a Drive"""
+    global drive_service
+    
+    if not drive_service:
+        if not inicializar_drive():
+            return False
+    
+    if not DRIVE_EXCEL_EMPRESA_ID:
+        return False
+    
+    try:
+        from googleapiclient.http import MediaFileUpload
+        
+        media = MediaFileUpload(EXCEL_EMPRESA, resumable=True)
+        drive_service.files().update(
+            fileId=DRIVE_EXCEL_EMPRESA_ID,
+            media_body=media
+        ).execute()
+        
+        logger.info("✅ Excel subido a Drive")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error subiendo Excel: {e}")
+        return False
+
+
 def main():
     """Función principal"""
     logger.info("="*50)
@@ -168,6 +282,20 @@ def main():
     else:
         logger.error(f"❌ Error en sync: {resultado.get('error', 'desconocido')}")
         sys.exit(1)
+    
+    # Paso 4: Sincronizar columna TRANSPORTISTA (bidireccional)
+    resultado_trans = sincronizar_transportistas()
+    
+    if resultado_trans.get('exito'):
+        excel_upd = resultado_trans.get('actualizados_excel', 0)
+        bd_upd = resultado_trans.get('actualizados_bd', 0)
+        
+        if excel_upd > 0 or bd_upd > 0:
+            logger.info(f"✅ Transportistas: {excel_upd} Excel, {bd_upd} BD")
+            
+            # Subir Excel a Drive si hubo cambios
+            if excel_upd > 0 and DRIVE_ENABLED:
+                subir_excel_a_drive()
 
 
 if __name__ == "__main__":
