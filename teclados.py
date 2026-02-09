@@ -35,20 +35,56 @@ teclado_conductor = ReplyKeyboardMarkup(
 
 
 # ============================================================
-# TECLADO ADMIN (con Modificar viaje en ruta)
+# TECLADO ADMIN (Simplificado con submenús)
 # ============================================================
 
 BOTONES_ADMIN = [
-    ["🤖 Asignar viajes", "📦 Todos los viajes"],
-    ["👥 Conductores", "🗺️ Estado de la flota"],
-    ["📋 Consultar rutas", "📊 Estadísticas"],
-    ["📈 Informe semanal", "💰 Rentabilidad"],
-    ["🔄 Modificar viaje en ruta"],  # NUEVO
-    ["🔄 Sincronizar", "🛠️ Gestiones"]
+    ["📦 Viajes y rutas"],
+    ["🚛 Flota"],
+    ["📊 Informes"],
+    ["🛠️ Gestiones"]
 ]
 
 teclado_admin = ReplyKeyboardMarkup(
     BOTONES_ADMIN,
+    resize_keyboard=True,
+    one_time_keyboard=False
+)
+
+# Submenú: Viajes y rutas
+BOTONES_VIAJES = [
+    ["📦 Todos los viajes", "📋 Consultar rutas"],
+    ["🤖 Asignar viajes", "🔄 Modificar viaje en ruta"],
+    ["⬅️ Volver al menú"]
+]
+
+teclado_viajes = ReplyKeyboardMarkup(
+    BOTONES_VIAJES,
+    resize_keyboard=True,
+    one_time_keyboard=False
+)
+
+# Submenú: Flota
+BOTONES_FLOTA = [
+    ["👥 Conductores", "🗺️ Estado de la flota"],
+    ["⬅️ Volver al menú"]
+]
+
+teclado_flota = ReplyKeyboardMarkup(
+    BOTONES_FLOTA,
+    resize_keyboard=True,
+    one_time_keyboard=False
+)
+
+# Submenú: Informes
+BOTONES_INFORMES = [
+    ["📊 Estadísticas", "📈 Informe semanal"],
+    ["💰 Rentabilidad"],
+    ["⬅️ Volver al menú"]
+]
+
+teclado_informes = ReplyKeyboardMarkup(
+    BOTONES_INFORMES,
     resize_keyboard=True,
     one_time_keyboard=False
 )
@@ -94,21 +130,30 @@ MAPEO_BOTONES = {
     "⛽ Gasolineras": "gasolineras",
     "📍 Mi ubicación": "mi_ubicacion",
     "🚚 Mi camión": "mi_camion",
-    "📝 Registros": "registros",  # NUEVO
+    "📝 Registros": "registros",
     "📊 Resumen": "resumen",
     
-    # Admin
-    "🤖 Asignar viajes": "asignar",
-    "👥 Conductores": "conductores",
+    # Admin - Menú principal
+    "📦 Viajes y rutas": "menu_viajes",
+    "🚛 Flota": "menu_flota",
+    "📊 Informes": "menu_informes",
+    "🛠️ Gestiones": "gestiones",
+    "⬅️ Volver al menú": "volver_menu",
+    
+    # Admin - Submenú Viajes
     "📦 Todos los viajes": "todos_viajes",
-    "🗺️ Estado de la flota": "estado_flota",
     "📋 Consultar rutas": "consultar_rutas",
+    "🤖 Asignar viajes": "asignar",
+    "🔄 Modificar viaje en ruta": "modificar_viaje_ruta",
+    
+    # Admin - Submenú Flota
+    "👥 Conductores": "conductores",
+    "🗺️ Estado de la flota": "estado_flota",
+    
+    # Admin - Submenú Informes
     "📊 Estadísticas": "estadisticas",
     "📈 Informe semanal": "informe_semanal",
     "💰 Rentabilidad": "rentabilidad",
-    "🔄 Sincronizar": "sync",
-    "🛠️ Gestiones": "gestiones",
-    "🔄 Modificar viaje en ruta": "modificar_viaje_ruta",  # NUEVO
     
     # No vinculado
     "🔗 Vincularme": "vincular",

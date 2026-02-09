@@ -40,7 +40,7 @@ from datetime import datetime
 from pathlib import Path
 
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
-from teclados import obtener_teclado, es_boton, obtener_accion_boton
+from teclados import obtener_teclado, es_boton, obtener_accion_boton, teclado_admin, teclado_viajes, teclado_flota, teclado_informes
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from dotenv import load_dotenv
 
@@ -1747,6 +1747,36 @@ async def mensaje_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if es_boton(texto):
         accion = obtener_accion_boton(texto)
         
+        # Submenús admin
+        if accion == "menu_viajes":
+            await update.message.reply_text(
+                "📦 *VIAJES Y RUTAS*\n\nSelecciona una opción:",
+                parse_mode="Markdown",
+                reply_markup=teclado_viajes
+            )
+            return
+        elif accion == "menu_flota":
+            await update.message.reply_text(
+                "🚛 *FLOTA*\n\nSelecciona una opción:",
+                parse_mode="Markdown",
+                reply_markup=teclado_flota
+            )
+            return
+        elif accion == "menu_informes":
+            await update.message.reply_text(
+                "📊 *INFORMES*\n\nSelecciona una opción:",
+                parse_mode="Markdown",
+                reply_markup=teclado_informes
+            )
+            return
+        elif accion == "volver_menu":
+            await update.message.reply_text(
+                "¿Qué necesitas?",
+                reply_markup=teclado_admin
+            )
+            return
+        
+        # Acciones existentes
         if accion == "mis_viajes":
             return await mis_viajes(update, context)
         elif accion == "gasolineras":
