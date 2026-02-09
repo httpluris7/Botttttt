@@ -52,6 +52,13 @@ COLUMNAS_EXCEL = {
     'descarga_salida': 19,    # Col S
 }
 
+# Columnas de datos del conductor (izquierda)
+COLUMNAS_CONDUCTOR = {
+    'ubicacion': 2,           # Col B - UBICACIÓN
+    'hora_llegada': 3,        # Col C - H.LL
+    'hora_salida': 4,         # Col D - H.SA
+}
+
 
 class RegistrosConductor:
     """
@@ -202,6 +209,102 @@ class RegistrosConductor:
         except Exception as e:
             logger.error(f"[REGISTROS] Error actualizando Excel: {e}")
             return False
+    
+    def _actualizar_ubicacion_conductor(self, fila_excel: int, lugar_descarga: str, 
+                                         hora_llegada: str = None) -> bool:
+        """
+        Actualiza la ubicación del conductor cuando completa una descarga.
+        
+        Columnas actualizadas:
+        - Col B (UBICACIÓN): lugar de descarga
+        - Col C (H.LL): hora de llegada a la descarga
+        - Col D (H.SA): hora de salida de la descarga (hora actual)
+        
+        Args:
+            fila_excel: Fila del viaje (0-indexed de la BD)
+            lugar_descarga: Lugar donde descargó (nueva ubicación)
+            hora_llegada: Hora de llegada a la descarga (si se tiene)
+        """
+        try:
+            from openpyxl import load_workbook
+            
+            if not Path(self.excel_path).exists():
+                logger.error(f"[REGISTROS] Excel no encontrado: {self.excel_path}")
+                return False
+            
+            hora_actual = datetime.now().strftime("%H:%M")
+            
+            wb = load_workbook(self.excel_path)
+            ws = wb.active
+            
+            fila_openpyxl = fila_excel + 1
+            
+            if fila_openpyxl > ws.max_row:
+                logger.error(f"[REGISTROS] Fila {fila_openpyxl} fuera de rango")
+                return False
+            
+            # Col B - UBICACIÓN
+            celda_ubicacion = ws.cell(row=fila_openpyxl, column=COLUMNAS_CONDUCTOR['ubicacion'])
+            ubicacion_anterior = celda_ubicacion.value
+            celda_ubicacion.value = lugar_descarga
+            
+            # Col C - H.LL (hora llegada)
+            celda_hll = ws.cell(row=fila_openpyxl, column=COLUMNAS_CONDUCTOR['hora_llegada'])
+            if hora_llegada:
+                celda_hll.value = hora_llegada
+            else:
+                # Intentar obtener la hora de llegada a descarga de Col R
+                hora_llegada_descarga = ws.cell(row=fila_openpyxl, column=COLUMNAS_EXCEL['descarga_llegada']).value
+                if hora_llegada_descarga:
+                    celda_hll.value = hora_llegada_descarga
+            
+            # Col D - H.SA (hora salida = hora actual)
+            celda_hsa = ws.cell(row=fila_openpyxl, column=COLUMNAS_CONDUCTOR['hora_salida'])
+            celda_hsa.value = hora_actual
+            
+            wb.save(self.excel_path)
+            wb.close()
+            
+            logger.info(f"[REGISTROS] 📍 Ubicación actualizada: Fila {fila_openpyxl}, "
+                       f"'{ubicacion_anterior}' → '{lugar_descarga}' "
+                       f"(H.LL: {celda_hll.value}, H.SA: {hora_actual})")
+            
+            # Actualizar también en BD
+            self._actualizar_ubicacion_bd(fila_excel, lugar_descarga)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"[REGISTROS] Error actualizando ubicación: {e}")
+            return False
+    
+    def _actualizar_ubicacion_bd(self, fila_excel: int, nueva_ubicacion: str):
+        """Actualiza la ubicación del conductor en la BD"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Buscar el conductor por fila_excel del viaje
+            cursor.execute("""
+                SELECT conductor_asignado FROM viajes_empresa 
+                WHERE fila_excel = ?
+            """, (fila_excel,))
+            row = cursor.fetchone()
+            
+            if row and row[0]:
+                nombre_conductor = row[0]
+                cursor.execute("""
+                    UPDATE conductores_empresa 
+                    SET ubicacion = ?
+                    WHERE nombre LIKE ?
+                """, (nueva_ubicacion, f"%{nombre_conductor}%"))
+                conn.commit()
+                logger.info(f"[REGISTROS] BD actualizada: {nombre_conductor} → {nueva_ubicacion}")
+            
+            conn.close()
+            
+        except Exception as e:
+            logger.error(f"[REGISTROS] Error actualizando BD: {e}")
     
     # ============================================================
     # HANDLERS DEL CONVERSATION
@@ -362,8 +465,24 @@ class RegistrosConductor:
             context.user_data.clear()
             return ConversationHandler.END
         
-        # Actualizar Excel
+        # Actualizar Excel (hora de carga/descarga)
         exito = self._actualizar_hora_excel(fila_excel, tipo, accion)
+        
+        # Si es SALIDA de DESCARGA → actualizar ubicación del conductor
+        ubicacion_actualizada = False
+        if tipo == 'descarga' and accion == 'salida' and exito:
+            lugar_descarga = viaje.get('lugar_entrega', viaje.get('lugar_descarga', ''))
+            if lugar_descarga:
+                ubicacion_actualizada = self._actualizar_ubicacion_conductor(
+                    fila_excel, 
+                    lugar_descarga
+                )
+                # Subir a Drive después de actualizar ubicación
+                if self.subir_drive and ubicacion_actualizada:
+                    try:
+                        self.subir_drive()
+                    except Exception as e:
+                        logger.error(f"[REGISTROS] Error subiendo a Drive: {e}")
         
         if tipo == 'carga':
             lugar = viaje.get('lugar_carga', 'N/A')
@@ -379,8 +498,13 @@ class RegistrosConductor:
                 f"✅ *REGISTRO GUARDADO*\n\n"
                 f"{emoji_tipo} {tipo.capitalize()}: *{lugar}*\n"
                 f"{emoji_accion} {accion.capitalize()}: *{hora_actual}*\n\n"
-                f"☁️ _Sincronizado con Drive_"
             )
+            
+            # Añadir info de ubicación si se actualizó
+            if ubicacion_actualizada:
+                texto += f"📍 _Tu ubicación se ha actualizado a:_ *{lugar}*\n\n"
+            
+            texto += "☁️ _Sincronizado con Drive_"
         else:
             texto = (
                 f"⚠️ *ERROR AL GUARDAR*\n\n"
