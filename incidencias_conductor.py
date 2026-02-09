@@ -190,7 +190,6 @@ class IncidenciasConductor:
                 return supervisor
         
         return SUPERVISOR_DEFAULT
-            return None
     
     # ============================================================
     # GUARDAR INCIDENCIA EN BD
