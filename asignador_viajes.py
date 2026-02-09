@@ -280,9 +280,22 @@ class AsignadorViajes:
     PALABRAS_FRIO = ['REFRIG', 'CONGEL', 'FRIO', 'FRÍO', '-18', '-20', '-25', '+2', '+4', '+5']
     PALABRAS_URGENTE = ['URGENTE', 'HOY', 'INMEDIATO', 'PRIORIDAD', 'ASAP', 'EXPRESS', '⚠️', '🚨']
     
-    def __init__(self, db_path: str, movildata_api):
+    def __init__(self, db_path: str, movildata_api, excel_path: str = None, 
+                 on_excel_updated: callable = None):
+        """
+        Inicializa el asignador de viajes.
+        
+        Args:
+            db_path: Ruta a la base de datos SQLite
+            movildata_api: Instancia de MovildataAPI para GPS
+            excel_path: Ruta al archivo Excel para actualizar la columna TRANSPORTISTA
+            on_excel_updated: Callback que se llama cuando se actualiza el Excel
+                              (para subir a Drive, por ejemplo)
+        """
         self.db_path = db_path
         self.movildata = movildata_api
+        self.excel_path = excel_path
+        self.on_excel_updated = on_excel_updated
         logger.info("[ASIGNADOR] Inicializado v3.0 con ENCADENAMIENTO INTELIGENTE")
     
     # ═══════════════════════════════════════════════════════════
@@ -645,10 +658,17 @@ class AsignadorViajes:
         return candidatos
     
     def asignar_viaje(self, viaje: ViajeParaAsignar, conductor: ConductorDisponible) -> bool:
-        """Asigna viaje a conductor en BD"""
+        """Asigna viaje a conductor en BD y actualiza Excel"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
+            
+            # Obtener fila_excel antes de actualizar
+            cursor.execute("SELECT fila_excel FROM viajes_empresa WHERE id = ?", (viaje.id,))
+            row = cursor.fetchone()
+            fila_excel = row[0] if row else None
+            
+            # Actualizar BD
             cursor.execute("""
                 UPDATE viajes_empresa 
                 SET conductor_asignado = ?, tractora_asignada = ?
@@ -659,9 +679,64 @@ class AsignadorViajes:
             
             encadenado = "🔗" if conductor.tiene_viajes_asignados else "🆕"
             logger.info(f"[ASIGNADOR] ✅ {encadenado} {viaje.cliente} ({viaje.lugar_carga}→{viaje.lugar_entrega}) → {conductor.nombre}")
+            
+            # Actualizar Excel si está configurado
+            if self.excel_path and fila_excel:
+                self._actualizar_excel_transportista(fila_excel, conductor.nombre)
+            
             return True
         except Exception as e:
             logger.error(f"[ASIGNADOR] Error: {e}")
+            return False
+    
+    def _actualizar_excel_transportista(self, fila_excel: int, nombre_conductor: str) -> bool:
+        """
+        Actualiza la columna TRANSPORTISTA (columna V) en el Excel.
+        
+        Args:
+            fila_excel: Número de fila (0-indexed como viene de la BD)
+            nombre_conductor: Nombre del conductor asignado
+        """
+        try:
+            from openpyxl import load_workbook
+            from pathlib import Path
+            
+            if not Path(self.excel_path).exists():
+                logger.error(f"[ASIGNADOR] Excel no encontrado: {self.excel_path}")
+                return False
+            
+            wb = load_workbook(self.excel_path)
+            ws = wb.active
+            
+            # fila_excel es 0-indexed, openpyxl es 1-indexed
+            fila_openpyxl = fila_excel + 1
+            columna_transportista = 22  # Columna V
+            
+            if fila_openpyxl > ws.max_row:
+                logger.error(f"[ASIGNADOR] Fila {fila_openpyxl} fuera de rango")
+                return False
+            
+            celda = ws.cell(row=fila_openpyxl, column=columna_transportista)
+            valor_anterior = celda.value
+            celda.value = nombre_conductor
+            
+            wb.save(self.excel_path)
+            wb.close()
+            
+            logger.info(f"[ASIGNADOR] 📝 Excel actualizado: Fila {fila_openpyxl}, "
+                       f"TRANSPORTISTA = '{nombre_conductor}' (antes: '{valor_anterior}')")
+            
+            # Llamar callback si existe (para subir a Drive)
+            if self.on_excel_updated:
+                try:
+                    self.on_excel_updated()
+                except Exception as e:
+                    logger.error(f"[ASIGNADOR] Error en callback: {e}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"[ASIGNADOR] Error actualizando Excel: {e}")
             return False
     
     def asignar_viajes_pendientes(self) -> Dict:
@@ -745,9 +820,19 @@ class AsignadorViajes:
 # Funciones globales
 _instancia_asignador = None
 
-def inicializar_asignador(db_path: str, movildata_api) -> AsignadorViajes:
+def inicializar_asignador(db_path: str, movildata_api, excel_path: str = None,
+                          on_excel_updated: callable = None) -> AsignadorViajes:
+    """
+    Inicializa el asignador de viajes.
+    
+    Args:
+        db_path: Ruta a la base de datos
+        movildata_api: API de Movildata para GPS
+        excel_path: Ruta al Excel para actualizar columna TRANSPORTISTA
+        on_excel_updated: Función a llamar cuando se actualiza el Excel (ej: subir a Drive)
+    """
     global _instancia_asignador
-    _instancia_asignador = AsignadorViajes(db_path, movildata_api)
+    _instancia_asignador = AsignadorViajes(db_path, movildata_api, excel_path, on_excel_updated)
     return _instancia_asignador
 
 def obtener_asignador() -> Optional[AsignadorViajes]:

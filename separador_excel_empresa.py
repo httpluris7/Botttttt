@@ -515,6 +515,119 @@ class SeparadorExcelEmpresa:
             "zonas": zonas,
             "ultima_sincronizacion": ultima_sync
         }
+    
+    def actualizar_transportista_excel(self, ruta_excel: str, fila_excel: int, 
+                                        nombre_conductor: str) -> bool:
+        """
+        Actualiza la columna TRANSPORTISTA (columna V, índice 21) en el Excel.
+        
+        Esta es la columna de la derecha que indica quién tiene asignado el viaje.
+        Se llama cuando el bot asigna un viaje a un conductor.
+        
+        Args:
+            ruta_excel: Ruta al archivo PRUEBO.xlsx
+            fila_excel: Número de fila en el Excel (0-indexed como está en la BD)
+            nombre_conductor: Nombre del conductor a escribir
+            
+        Returns:
+            True si se actualizó correctamente
+        """
+        try:
+            from openpyxl import load_workbook
+            
+            if not Path(ruta_excel).exists():
+                logger.error(f"[SEPARADOR] Excel no encontrado: {ruta_excel}")
+                return False
+            
+            # Cargar el workbook manteniendo estilos y formato
+            wb = load_workbook(ruta_excel)
+            ws = wb.active
+            
+            # Columna V = índice 22 en openpyxl (1-indexed)
+            # fila_excel viene 0-indexed, openpyxl es 1-indexed, así que +1
+            fila_openpyxl = fila_excel + 1
+            columna_transportista = 22  # Columna V
+            
+            # Verificar que la fila existe
+            if fila_openpyxl > ws.max_row:
+                logger.error(f"[SEPARADOR] Fila {fila_openpyxl} fuera de rango (max: {ws.max_row})")
+                return False
+            
+            # Escribir el nombre del conductor
+            celda = ws.cell(row=fila_openpyxl, column=columna_transportista)
+            valor_anterior = celda.value
+            celda.value = nombre_conductor
+            
+            # Guardar el archivo
+            wb.save(ruta_excel)
+            wb.close()
+            
+            logger.info(f"[SEPARADOR] ✅ Excel actualizado: Fila {fila_openpyxl}, "
+                       f"Col V = '{nombre_conductor}' (antes: '{valor_anterior}')")
+            return True
+            
+        except Exception as e:
+            logger.error(f"[SEPARADOR] Error actualizando Excel: {e}")
+            return False
+    
+    def actualizar_asignacion_viaje(self, viaje_id: int, nombre_conductor: str,
+                                     ruta_excel: str) -> Dict:
+        """
+        Actualiza la asignación de un viaje tanto en BD como en Excel.
+        
+        Args:
+            viaje_id: ID del viaje en la BD
+            nombre_conductor: Nombre del conductor asignado
+            ruta_excel: Ruta al archivo Excel
+            
+        Returns:
+            Dict con resultado de la operación
+        """
+        resultado = {
+            "exito": False,
+            "bd_actualizada": False,
+            "excel_actualizado": False,
+            "fila_excel": None
+        }
+        
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Obtener fila_excel del viaje
+            cursor.execute("SELECT fila_excel FROM viajes_empresa WHERE id = ?", (viaje_id,))
+            row = cursor.fetchone()
+            
+            if not row:
+                logger.error(f"[SEPARADOR] Viaje {viaje_id} no encontrado")
+                conn.close()
+                return resultado
+            
+            fila_excel = row[0]
+            resultado["fila_excel"] = fila_excel
+            
+            # Actualizar BD
+            cursor.execute("""
+                UPDATE viajes_empresa 
+                SET conductor_asignado = ?
+                WHERE id = ?
+            """, (nombre_conductor, viaje_id))
+            conn.commit()
+            conn.close()
+            resultado["bd_actualizada"] = True
+            
+            # Actualizar Excel
+            if fila_excel and ruta_excel:
+                resultado["excel_actualizado"] = self.actualizar_transportista_excel(
+                    ruta_excel, fila_excel, nombre_conductor
+                )
+            
+            resultado["exito"] = resultado["bd_actualizada"] and resultado["excel_actualizado"]
+            return resultado
+            
+        except Exception as e:
+            logger.error(f"[SEPARADOR] Error en actualizar_asignacion_viaje: {e}")
+            return resultado
 
 
 # ============================================================

@@ -1811,8 +1811,6 @@ async def mensaje_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 elif accion == 'modificar_viaje':
                     return await gestiones_manager.inicio_modificar_viaje(update, context)
                 return
-            
-           
 
             teclado = obtener_teclado(es_admin=admin, esta_vinculado=True)
             await update.message.reply_text(
@@ -1952,8 +1950,13 @@ def main():
     movildata_api = MovildataAPI()
     logger.info("✅ Movildata GPS")
     
-    # Asignador de viajes
-    asignador = inicializar_asignador(config.DB_PATH, movildata_api)
+    # Asignador de viajes (con actualización de Excel y subida a Drive)
+    asignador = inicializar_asignador(
+        config.DB_PATH, 
+        movildata_api,
+        excel_path=config.EXCEL_EMPRESA,
+        on_excel_updated=subir_excel_a_drive if config.DRIVE_ENABLED else None
+    )
     logger.info("✅ Asignador de viajes")
     
     # Inteligencia dual

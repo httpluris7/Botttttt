@@ -60,8 +60,8 @@ MOD_RUTA_DESCARGAS_MENU = 113
 MOD_RUTA_DESCARGAS_EDITAR = 114
 MOD_RUTA_DESCARGAS_ELIMINAR = 115
 
-# Zonas disponibles
-ZONAS = ["ZONA NORTE", "ZONA SUR", "ZONA ESTE", "ZONA OESTE", "ZONA CENTRO"]
+# Zonas disponibles (según Excel PRUEBO.xlsx)
+ZONAS = ["ZONA NORTE", "ZONA CORTOS NORTE", "ZONA RESTO NACIONAL", "ZONA MURCIA"]
 
 
 # ============================================================
@@ -311,8 +311,10 @@ class ModificadorViajesRuta:
         
         params = ()
         if zona:
-            query += " AND (c.zona LIKE ? OR v.zona LIKE ?)"
-            params = (f"%{zona}%", f"%{zona}%")
+            # Normalizar zona (quitar espacios extras)
+            zona_normalizada = zona.strip()
+            query += " AND (TRIM(c.zona) LIKE ? OR TRIM(v.zona) LIKE ?)"
+            params = (f"%{zona_normalizada}%", f"%{zona_normalizada}%")
         
         query += " ORDER BY c.nombre"
         
