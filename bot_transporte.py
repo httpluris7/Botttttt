@@ -65,6 +65,7 @@ from notificaciones_viajes import inicializar_notificador, obtener_notificador
 from asignador_viajes import inicializar_asignador, obtener_asignador
 from gestiones_manager import GestionesManager
 from modificador_viajes_ruta import ModificadorViajesRuta
+from registros_conductor import crear_registros_conductor
 
 gestiones_manager = None
 modificador_ruta = None
@@ -2014,6 +2015,15 @@ def main():
     )
     app.add_handler(modificador_ruta.get_conversation_handler())
     logger.info("✅ Gestiones manager")
+    
+    # Registros de conductor (llegada/salida en carga/descarga)
+    registros = crear_registros_conductor(
+        config.EXCEL_EMPRESA,
+        config.DB_PATH,
+        subir_excel_a_drive if config.DRIVE_ENABLED else None
+    )
+    app.add_handler(registros.get_conversation_handler())
+    logger.info("✅ Registros conductor")
     
     # Handlers para callbacks de rutas (ADMIN)
     app.add_handler(CallbackQueryHandler(callback_ver_rutas, pattern="^rutas:(?!volver)"))
