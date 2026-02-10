@@ -707,7 +707,7 @@ class GestionesManager:
     
     async def _iniciar_añadir_viaje(self, update, context):
         context.user_data['viaje'] = {'cargas': [], 'descargas': []}
-        keyboard = [["ZONA NORTE", "ZONA SUR"], ["ZONA ESTE", "ZONA OESTE"], ["ZONA CENTRO"], ["⬅️ Volver", "❌ Cancelar"]]
+        keyboard = [["ZONA NORTE", "ZONA CORTOS NORTE"], ["ZONA RESTO NACIONAL", "ZONA MURCIA"], ["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
             "📦 *NUEVO VIAJE*\n\nPaso 1/10\n\n🗺️ *¿Zona?*",
             parse_mode="Markdown",
