@@ -279,20 +279,27 @@ class GestionesManager:
                 ],
                 
                 # === CAMIONERO ===
-                CAM_NOMBRE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.cam_nombre)],
+                CAM_NOMBRE: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.cam_nombre),
+                ],
                 CAM_TELEFONO: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.cam_volver_nombre),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.cam_telefono),
                 ],
                 CAM_TRACTORA: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.cam_volver_telefono),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.cam_tractora),
                 ],
                 CAM_REMOLQUE: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.cam_volver_tractora),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.cam_remolque),
                 ],
                 CAM_UBICACION: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.cam_volver_remolque),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.cam_ubicacion),
                 ],
@@ -302,72 +309,85 @@ class GestionesManager:
                     MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                 ],
                 CAM_EDITAR_CAMPO: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.cam_mostrar_resumen),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.cam_editar_campo),
                 ],
                 
                 # === VIAJE - AÑADIR ===
                 VIA_ZONA: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.menu_viaje),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_zona),
                 ],
                 VIA_CLIENTE: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_zona),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_cliente),
                 ],
                 VIA_NUM_PEDIDO: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_cliente),
                     MessageHandler(filters.Regex("^⏭️ Saltar$"), self.via_saltar_num_pedido),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_num_pedido),
                 ],
                 VIA_REF_CLIENTE: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_num_pedido),
                     MessageHandler(filters.Regex("^⏭️ Saltar$"), self.via_saltar_ref_cliente),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_ref_cliente),
                 ],
                 VIA_INTERCAMBIO: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_ref_cliente),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_intercambio),
                 ],
                 VIA_LUGAR_CARGA: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_intercambio),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_lugar_carga),
                 ],
                 VIA_CARGA_ADICIONAL: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^➕ Sí$"), self.via_pedir_carga_adicional),
                     MessageHandler(filters.Regex("^➡️ No$"), self.via_saltar_carga_adicional),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._via_volver_desde_carga_adicional),
-                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._handler_carga_adicional),
                 ],
                 VIA_CARGA_ADICIONAL_LUGAR: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._via_preguntar_mas_cargas),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_carga_adicional_lugar),
                 ],
                 VIA_LUGAR_DESCARGA: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._via_volver_a_cargas),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_lugar_descarga),
                 ],
                 VIA_DESCARGA_ADICIONAL: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^➕ Sí$"), self.via_pedir_descarga_adicional),
                     MessageHandler(filters.Regex("^➡️ No$"), self.via_saltar_descarga_adicional),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._via_volver_desde_descarga_adicional),
-                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._handler_descarga_adicional),
                 ],
                 VIA_DESCARGA_ADICIONAL_LUGAR: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._via_preguntar_mas_descargas),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_descarga_adicional_lugar),
                 ],
                 VIA_MERCANCIA: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._via_volver_a_descargas),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_mercancia),
                 ],
                 VIA_KM: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_mercancia),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_km),
                 ],
                 VIA_PRECIO: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_km),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_precio),
                 ],
@@ -377,59 +397,71 @@ class GestionesManager:
                     MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                 ],
                 VIA_EDITAR_CAMPO: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_mostrar_resumen),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_editar_campo),
                 ],
                 VIA_EDITAR_VALOR: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_editar),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_editar_valor),
                 ],
                 
                 # === SUBMENÚ CARGAS/DESCARGAS (compartido) ===
                 CARGAS_MENU: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^➕ Añadir carga$"), self._cargas_añadir),
                     MessageHandler(filters.Regex("^🗑️ Eliminar carga$"), self._cargas_pedir_eliminar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._cargas_volver),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._cargas_seleccionar),
                 ],
                 CARGAS_EDITAR: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._mostrar_cargas_menu),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._cargas_guardar_edicion),
                 ],
                 CARGAS_ELIMINAR: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._mostrar_cargas_menu),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._cargas_confirmar_eliminar),
                 ],
                 DESCARGAS_MENU: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^➕ Añadir descarga$"), self._descargas_añadir),
                     MessageHandler(filters.Regex("^🗑️ Eliminar descarga$"), self._descargas_pedir_eliminar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._descargas_volver),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._descargas_seleccionar),
                 ],
                 DESCARGAS_EDITAR: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._mostrar_descargas_menu),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._descargas_guardar_edicion),
                 ],
                 DESCARGAS_ELIMINAR: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._mostrar_descargas_menu),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._descargas_confirmar_eliminar),
                 ],
                 
                 # === MODIFICAR EXISTENTE ===
                 MOD_ELEGIR_VIAJE: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.menu_viaje),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.mod_elegir_viaje),
                 ],
                 MOD_ELEGIR_CAMIONERO: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.menu_camionero),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.mod_elegir_camionero),
                 ],
                 MOD_CAMPO: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.mod_volver_lista),
                     MessageHandler(filters.Regex("^✅ Guardar cambios$"), self.mod_guardar),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.mod_elegir_campo),
                 ],
                 MOD_VALOR: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._mod_volver_resumen),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.mod_nuevo_valor),
                 ],
@@ -482,28 +514,120 @@ class GestionesManager:
         return MENU_ACCION
     
     async def sincronizar_drive(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Sincroniza Excel con Google Drive"""
-        await update.message.reply_text("🔄 Sincronizando con Drive...")
+        """Sincronización bidireccional completa con Google Drive"""
+        await update.message.reply_text("🔄 Sincronizando con Drive...\n\n⏳ Descargando Excel...")
         
         try:
+            from separador_excel_empresa import SeparadorExcelEmpresa
+            from extractor_telefonos import sincronizar_telefonos
+            from generador_direcciones import sincronizar_direcciones
+            import sqlite3
+            from openpyxl import load_workbook
+            
+            # Paso 1: Descargar Excel de Drive
+            descargado = False
             if self.subir_drive:
-                self.subir_drive()
-                await update.message.reply_text(
-                    "✅ *Sincronización completada*\n\nExcel subido a Google Drive.",
-                    parse_mode="Markdown",
-                    reply_markup=ReplyKeyboardMarkup(
-                        [["🚛 Camionero", "📦 Viaje"], ["🔄 Sincronizar"], ["❌ Cancelar"]],
-                        resize_keyboard=True
-                    )
-                )
+                try:
+                    # Intentar descargar desde Drive
+                    from sync_automatico import descargar_excel_desde_drive, DRIVE_ENABLED, DRIVE_EXCEL_EMPRESA_ID
+                    if DRIVE_ENABLED and DRIVE_EXCEL_EMPRESA_ID:
+                        descargado = descargar_excel_desde_drive()
+                except Exception as e:
+                    logger.warning(f"[GESTIONES] No se pudo descargar de Drive: {e}")
+            
+            if descargado:
+                await update.message.reply_text("✅ Excel descargado de Drive\n⏳ Sincronizando BD...")
             else:
-                await update.message.reply_text(
-                    "⚠️ Drive no está configurado.",
-                    reply_markup=ReplyKeyboardMarkup(
-                        [["🚛 Camionero", "📦 Viaje"], ["🔄 Sincronizar"], ["❌ Cancelar"]],
-                        resize_keyboard=True
-                    )
+                await update.message.reply_text("⏳ Usando Excel local, sincronizando BD...")
+            
+            # Paso 2: Sincronizar BD con Excel
+            separador = SeparadorExcelEmpresa(self.db_path)
+            resultado = separador.sincronizar_desde_archivo(self.excel_path, forzar=True)
+            
+            conductores = resultado.get('conductores', 0)
+            viajes = resultado.get('viajes', 0)
+            
+            # Sincronizar teléfonos y direcciones
+            sincronizar_telefonos(self.excel_path, self.db_path)
+            sincronizar_direcciones(self.db_path)
+            
+            # Paso 3: Sincronizar columna TRANSPORTISTA (bidireccional)
+            await update.message.reply_text("⏳ Sincronizando transportistas...")
+            
+            wb = load_workbook(self.excel_path)
+            ws = wb.active
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            COL_TRANSPORTISTA = 22  # Columna V
+            actualizados_excel = 0
+            actualizados_bd = 0
+            
+            cursor.execute("""
+                SELECT id, conductor_asignado, fila_excel 
+                FROM viajes_empresa 
+                WHERE fila_excel IS NOT NULL
+            """)
+            viajes_db = cursor.fetchall()
+            
+            for viaje in viajes_db:
+                viaje_id = viaje['id']
+                conductor_bd = (viaje['conductor_asignado'] or '').strip()
+                fila_excel = viaje['fila_excel']
+                fila_openpyxl = fila_excel + 1
+                
+                if fila_openpyxl > ws.max_row:
+                    continue
+                
+                celda = ws.cell(row=fila_openpyxl, column=COL_TRANSPORTISTA)
+                transportista_excel = (str(celda.value) if celda.value else '').strip()
+                
+                # BD tiene conductor, Excel vacío → Escribir en Excel
+                if conductor_bd and not transportista_excel:
+                    celda.value = conductor_bd
+                    actualizados_excel += 1
+                
+                # Excel tiene nombre, BD vacío → Actualizar BD
+                elif transportista_excel and not conductor_bd:
+                    cursor.execute("""
+                        UPDATE viajes_empresa 
+                        SET conductor_asignado = ? 
+                        WHERE id = ?
+                    """, (transportista_excel, viaje_id))
+                    actualizados_bd += 1
+            
+            if actualizados_excel > 0:
+                wb.save(self.excel_path)
+            wb.close()
+            
+            if actualizados_bd > 0:
+                conn.commit()
+            conn.close()
+            
+            # Paso 4: Subir Excel a Drive
+            if self.subir_drive:
+                await update.message.reply_text("⏳ Subiendo a Drive...")
+                self.subir_drive()
+            
+            # Resumen final
+            mensaje = "✅ *SINCRONIZACIÓN COMPLETADA*\n\n"
+            mensaje += f"📥 Descargado de Drive: {'Sí' if descargado else 'No'}\n"
+            mensaje += f"👥 Conductores: {conductores}\n"
+            mensaje += f"📦 Viajes: {viajes}\n"
+            mensaje += f"📝 Transportistas Excel→BD: {actualizados_bd}\n"
+            mensaje += f"📝 Transportistas BD→Excel: {actualizados_excel}\n"
+            mensaje += f"📤 Subido a Drive: {'Sí' if self.subir_drive else 'No'}"
+            
+            await update.message.reply_text(
+                mensaje,
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardMarkup(
+                    [["🚛 Camionero", "📦 Viaje"], ["🔄 Sincronizar"], ["❌ Cancelar"]],
+                    resize_keyboard=True
                 )
+            )
+            
         except Exception as e:
             logger.error(f"[GESTIONES] Error sincronizando: {e}")
             await update.message.reply_text(
