@@ -268,6 +268,7 @@ class GestionesManager:
                 MENU_PRINCIPAL: [
                     MessageHandler(filters.Regex("^🚛 Camionero$"), self.menu_camionero),
                     MessageHandler(filters.Regex("^📦 Viaje$"), self.menu_viaje),
+                    MessageHandler(filters.Regex("^🔄 Sincronizar$"), self.sincronizar_drive),
                     MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                 ],
                 MENU_ACCION: [
@@ -452,7 +453,7 @@ class GestionesManager:
             return ConversationHandler.END
         
         context.user_data.clear()
-        keyboard = [["🚛 Camionero", "📦 Viaje"], ["❌ Cancelar"]]
+        keyboard = [["🚛 Camionero", "📦 Viaje"], ["🔄 Sincronizar"], ["❌ Cancelar"]]
         await update.message.reply_text(
             "🛠️ *GESTIONES*\n\n¿Qué quieres gestionar?",
             parse_mode="Markdown",
@@ -479,6 +480,41 @@ class GestionesManager:
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
         return MENU_ACCION
+    
+    async def sincronizar_drive(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Sincroniza Excel con Google Drive"""
+        await update.message.reply_text("🔄 Sincronizando con Drive...")
+        
+        try:
+            if self.subir_drive:
+                self.subir_drive()
+                await update.message.reply_text(
+                    "✅ *Sincronización completada*\n\nExcel subido a Google Drive.",
+                    parse_mode="Markdown",
+                    reply_markup=ReplyKeyboardMarkup(
+                        [["🚛 Camionero", "📦 Viaje"], ["🔄 Sincronizar"], ["❌ Cancelar"]],
+                        resize_keyboard=True
+                    )
+                )
+            else:
+                await update.message.reply_text(
+                    "⚠️ Drive no está configurado.",
+                    reply_markup=ReplyKeyboardMarkup(
+                        [["🚛 Camionero", "📦 Viaje"], ["🔄 Sincronizar"], ["❌ Cancelar"]],
+                        resize_keyboard=True
+                    )
+                )
+        except Exception as e:
+            logger.error(f"[GESTIONES] Error sincronizando: {e}")
+            await update.message.reply_text(
+                f"❌ Error: {e}",
+                reply_markup=ReplyKeyboardMarkup(
+                    [["🚛 Camionero", "📦 Viaje"], ["🔄 Sincronizar"], ["❌ Cancelar"]],
+                    resize_keyboard=True
+                )
+            )
+        
+        return MENU_PRINCIPAL
     
     async def accion_añadir(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         tipo = context.user_data.get('tipo', 'viaje')
