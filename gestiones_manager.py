@@ -263,6 +263,12 @@ class GestionesManager:
                 CommandHandler("anadir_viaje", self.inicio_añadir_viaje),
                 CommandHandler("modificar_conductor", self.inicio_modificar_conductor),
                 CommandHandler("modificar_viaje", self.inicio_modificar_viaje),
+                # Nuevos botones desde submenús
+                MessageHandler(filters.Regex("^➕ Añadir camionero$"), self.inicio_añadir_conductor),
+                MessageHandler(filters.Regex("^✏️ Modificar camionero$"), self.inicio_modificar_conductor),
+                MessageHandler(filters.Regex("^➕ Añadir viaje$"), self.inicio_añadir_viaje),
+                MessageHandler(filters.Regex("^✏️ Modificar viaje$"), self.inicio_modificar_viaje),
+                MessageHandler(filters.Regex("^🔄 Sincronizar$"), self.sincronizar_drive),
             ],
             states={
                 MENU_PRINCIPAL: [
@@ -622,23 +628,17 @@ class GestionesManager:
             await update.message.reply_text(
                 mensaje,
                 parse_mode="Markdown",
-                reply_markup=ReplyKeyboardMarkup(
-                    [["🚛 Camionero", "📦 Viaje"], ["🔄 Sincronizar"], ["❌ Cancelar"]],
-                    resize_keyboard=True
-                )
+                reply_markup=teclado_admin
             )
             
         except Exception as e:
             logger.error(f"[GESTIONES] Error sincronizando: {e}")
             await update.message.reply_text(
                 f"❌ Error: {e}",
-                reply_markup=ReplyKeyboardMarkup(
-                    [["🚛 Camionero", "📦 Viaje"], ["🔄 Sincronizar"], ["❌ Cancelar"]],
-                    resize_keyboard=True
-                )
+                reply_markup=teclado_admin
             )
         
-        return MENU_PRINCIPAL
+        return ConversationHandler.END
     
     async def accion_añadir(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         tipo = context.user_data.get('tipo', 'viaje')

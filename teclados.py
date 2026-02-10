@@ -40,10 +40,8 @@ teclado_conductor = ReplyKeyboardMarkup(
 # ============================================================
 
 BOTONES_ADMIN = [
-    ["📦 Viajes y rutas"],
-    ["🚛 Flota"],
-    ["📊 Informes"],
-    ["🛠️ Gestiones"]
+    ["📦 Viajes y rutas", "🚛 Flota"],
+    ["📊 Informes", "🔄 Sincronizar"]
 ]
 
 teclado_admin = ReplyKeyboardMarkup(
@@ -56,6 +54,7 @@ teclado_admin = ReplyKeyboardMarkup(
 BOTONES_VIAJES = [
     ["📦 Todos los viajes", "📋 Consultar rutas"],
     ["🤖 Asignar viajes", "🔄 Modificar viaje en ruta"],
+    ["➕ Añadir viaje", "✏️ Modificar viaje"],
     ["⬅️ Volver al menú"]
 ]
 
@@ -68,6 +67,7 @@ teclado_viajes = ReplyKeyboardMarkup(
 # Submenú: Flota
 BOTONES_FLOTA = [
     ["👥 Conductores", "🗺️ Estado de la flota"],
+    ["➕ Añadir camionero", "✏️ Modificar camionero"],
     ["⬅️ Volver al menú"]
 ]
 
@@ -139,7 +139,7 @@ MAPEO_BOTONES = {
     "📦 Viajes y rutas": "menu_viajes",
     "🚛 Flota": "menu_flota",
     "📊 Informes": "menu_informes",
-    "🛠️ Gestiones": "gestiones",
+    "🔄 Sincronizar": "sincronizar",
     "⬅️ Volver al menú": "volver_menu",
     
     # Admin - Submenú Viajes
@@ -147,10 +147,14 @@ MAPEO_BOTONES = {
     "📋 Consultar rutas": "consultar_rutas",
     "🤖 Asignar viajes": "asignar",
     "🔄 Modificar viaje en ruta": "modificar_viaje_ruta",
+    "➕ Añadir viaje": "añadir_viaje",
+    "✏️ Modificar viaje": "modificar_viaje",
     
     # Admin - Submenú Flota
     "👥 Conductores": "conductores",
     "🗺️ Estado de la flota": "estado_flota",
+    "➕ Añadir camionero": "añadir_camionero",
+    "✏️ Modificar camionero": "modificar_camionero",
     
     # Admin - Submenú Informes
     "📊 Estadísticas": "estadisticas",

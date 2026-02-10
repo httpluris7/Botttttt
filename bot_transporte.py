@@ -1610,6 +1610,20 @@ async def callback_rutas_volver(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text("❌ Error al cargar la lista.")
 
 
+async def callback_incidencia_listo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback cuando el conductor pulsa 'Listo' después de reportar incidencia"""
+    query = update.callback_query
+    await query.answer()
+    
+    from teclados import teclado_conductor
+    
+    await query.edit_message_text("✅ Incidencia registrada correctamente.")
+    await query.message.reply_text(
+        "¿Qué más necesitas?",
+        reply_markup=teclado_conductor
+    )
+
+
 # ============================================================
 # HANDLERS INFORMACIÓN (ambos)
 # ============================================================
@@ -2068,6 +2082,7 @@ def main():
     # Handlers para callbacks de rutas (ADMIN)
     app.add_handler(CallbackQueryHandler(callback_ver_rutas, pattern="^rutas:(?!volver)"))
     app.add_handler(CallbackQueryHandler(callback_rutas_volver, pattern="^rutas:volver$"))
+    app.add_handler(CallbackQueryHandler(callback_incidencia_listo, pattern="^inc_listo$"))
     logger.info("✅ Consultar rutas")
     
     # Mensajes texto
