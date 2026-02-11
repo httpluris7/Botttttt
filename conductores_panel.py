@@ -1,7 +1,10 @@
 """
-PANEL DE CONDUCTORES UNIFICADO v1.0
+PANEL DE CONDUCTORES UNIFICADO v1.1
 ====================================
 Mejora M1: Admin -> Flota -> Conductores
+
+Cambios v1.1:
+- Corregido bug: botón "Ver ficha" no funcionaba después de editar
 
 Funcionalidades:
 - Lista todos los conductores con estado visual
@@ -69,7 +72,7 @@ class ConductoresPanel:
             'absentismo': '🔴 Estado (Activo/Baja/Vacaciones)',
         }
         
-        logger.info("[CONDUCTORES_PANEL] Panel de conductores v1.0 inicializado")
+        logger.info("[CONDUCTORES_PANEL] Panel de conductores v1.1 inicializado")
     
     def get_conversation_handler(self):
         """Devuelve el ConversationHandler"""
@@ -83,6 +86,7 @@ class ConductoresPanel:
                     CallbackQueryHandler(self.ver_ficha, pattern="^cond_ver_"),
                     CallbackQueryHandler(self.pagina, pattern="^cond_pag_"),
                     CallbackQueryHandler(self.modo_buscar, pattern="^cond_buscar$"),
+                    CallbackQueryHandler(self.volver_lista, pattern="^cond_volver_lista$"),
                     CallbackQueryHandler(self.cancelar_callback, pattern="^cond_cancelar$"),
                 ],
                 COND_BUSCAR: [
@@ -91,19 +95,24 @@ class ConductoresPanel:
                     CallbackQueryHandler(self.cancelar_callback, pattern="^cond_cancelar$"),
                 ],
                 COND_FICHA: [
+                    CallbackQueryHandler(self.ver_ficha, pattern="^cond_ver_"),
                     CallbackQueryHandler(self.menu_editar, pattern="^cond_editar$"),
                     CallbackQueryHandler(self.volver_ficha, pattern="^cond_volver_ficha$"),
                     CallbackQueryHandler(self.volver_lista, pattern="^cond_volver_lista$"),
                     CallbackQueryHandler(self.cancelar_callback, pattern="^cond_cancelar$"),
                 ],
                 COND_EDITAR_MENU: [
+                    CallbackQueryHandler(self.ver_ficha, pattern="^cond_ver_"),
                     CallbackQueryHandler(self.elegir_campo, pattern="^cond_campo_"),
                     CallbackQueryHandler(self.volver_ficha, pattern="^cond_volver_ficha$"),
+                    CallbackQueryHandler(self.volver_lista, pattern="^cond_volver_lista$"),
                     CallbackQueryHandler(self.cancelar_callback, pattern="^cond_cancelar$"),
                 ],
                 COND_EDITAR_VALOR: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.guardar_campo),
+                    CallbackQueryHandler(self.ver_ficha, pattern="^cond_ver_"),
                     CallbackQueryHandler(self.volver_editar_menu, pattern="^cond_volver_editar$"),
+                    CallbackQueryHandler(self.volver_lista, pattern="^cond_volver_lista$"),
                     CallbackQueryHandler(self.cancelar_callback, pattern="^cond_cancelar$"),
                 ],
             },
@@ -217,6 +226,7 @@ class ConductoresPanel:
         
         conductores = self._obtener_conductores()
         context.user_data['conductores'] = conductores
+        context.user_data['conductores_filtrados'] = conductores
         context.user_data['pagina'] = 0
         
         return await self._mostrar_lista(update, context, es_mensaje=True)
@@ -358,7 +368,10 @@ class ConductoresPanel:
         
         context.user_data['conductor_actual'] = conductor
         
-        # Determinar estado
+        return await self._mostrar_ficha_query(query, conductor)
+    
+    async def _mostrar_ficha_query(self, query, conductor: Dict):
+        """Muestra la ficha del conductor (desde callback query)"""
         absentismo = (conductor.get('absentismo') or '').upper()
         if 'BAJA' in absentismo:
             estado = "🔴 BAJA"
@@ -510,9 +523,10 @@ class ConductoresPanel:
             else:
                 texto += "⚠️ Guardado local (Drive no sincronizado)"
             
+            conductor_id = conductor.get('id')
             keyboard = [
                 [InlineKeyboardButton("✏️ Editar otro campo", callback_data="cond_editar")],
-                [InlineKeyboardButton("👁️ Ver ficha", callback_data="cond_volver_ficha")],
+                [InlineKeyboardButton("👁️ Ver ficha", callback_data=f"cond_ver_{conductor_id}")],
                 [InlineKeyboardButton("⬅️ Volver a lista", callback_data="cond_volver_lista")]
             ]
             
@@ -521,6 +535,7 @@ class ConductoresPanel:
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             
+            # Retornamos COND_FICHA porque ahora tiene el handler cond_ver_
             return COND_FICHA
             
         except Exception as e:
@@ -627,50 +642,12 @@ class ConductoresPanel:
         if conductor:
             context.user_data['conductor_actual'] = conductor
         
-        # Mostrar ficha
-        return await self._mostrar_ficha(update, context, conductor)
+        return await self._mostrar_ficha_query(query, conductor)
     
     async def _mostrar_ficha(self, update: Update, context: ContextTypes.DEFAULT_TYPE, conductor: Dict):
         """Muestra la ficha del conductor (reutilizable)"""
         query = update.callback_query
-        
-        absentismo = (conductor.get('absentismo') or '').upper()
-        if 'BAJA' in absentismo:
-            estado = "🔴 BAJA"
-        elif 'VACACIONES' in absentismo:
-            estado = "🔴 VACACIONES"
-        else:
-            estado = "🟢 Activo"
-        
-        texto = (
-            f"📋 FICHA CONDUCTOR\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"👤 Nombre: {conductor.get('nombre', '-')}\n"
-            f"📱 Teléfono: {conductor.get('telefono', '-') or '-'}\n"
-            f"🚛 Tractora: {conductor.get('tractora', '-')}\n"
-            f"📦 Remolque: {conductor.get('remolque', '-') or '-'}\n"
-            f"📍 Ubicación: {conductor.get('ubicacion', '-')}\n"
-            f"🗺️ Zona: {conductor.get('zona', '-')}\n"
-            f"📊 Estado: {estado}\n"
-        )
-        
-        if conductor.get('telegram_id'):
-            texto += f"📲 Vinculado: ✅\n"
-        else:
-            texto += f"📲 Vinculado: ❌\n"
-        
-        keyboard = [
-            [InlineKeyboardButton("✏️ Editar", callback_data="cond_editar")],
-            [InlineKeyboardButton("⬅️ Volver a lista", callback_data="cond_volver_lista")],
-            [InlineKeyboardButton("❌ Cerrar", callback_data="cond_cancelar")]
-        ]
-        
-        await query.edit_message_text(
-            texto,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        
-        return COND_FICHA
+        return await self._mostrar_ficha_query(query, conductor)
     
     async def volver_editar_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Vuelve al menú de edición"""
