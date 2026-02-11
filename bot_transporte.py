@@ -447,6 +447,76 @@ def subir_excel_a_drive() -> bool:
         return False
 
 
+def subir_archivo_nuevo_a_drive(ruta_archivo: str, nombre_archivo: str = None, carpeta_id: str = None) -> bool:
+    """
+    Sube un archivo NUEVO a Drive (no actualiza, crea nuevo).
+    
+    Args:
+        ruta_archivo: Ruta local del archivo a subir
+        nombre_archivo: Nombre para el archivo en Drive (opcional, usa el nombre del archivo)
+        carpeta_id: ID de la carpeta destino en Drive (opcional, usa la misma del Excel principal)
+    
+    Returns:
+        bool: True si se subió correctamente
+    """
+    global drive_service
+    
+    if not drive_service:
+        if not inicializar_drive():
+            logger.error("[DRIVE] No se pudo inicializar Drive")
+            return False
+    
+    if not Path(ruta_archivo).exists():
+        logger.warning(f"[DRIVE] No existe el archivo: {ruta_archivo}")
+        return False
+    
+    try:
+        from googleapiclient.http import MediaFileUpload
+        
+        if nombre_archivo is None:
+            nombre_archivo = Path(ruta_archivo).name
+        
+        # Obtener la carpeta padre del archivo principal
+        if carpeta_id is None and config.DRIVE_EXCEL_EMPRESA_ID:
+            try:
+                file_info = drive_service.files().get(
+                    fileId=config.DRIVE_EXCEL_EMPRESA_ID,
+                    fields='parents'
+                ).execute()
+                parents = file_info.get('parents', [])
+                if parents:
+                    carpeta_id = parents[0]
+            except Exception as e:
+                logger.warning(f"[DRIVE] No se pudo obtener carpeta padre: {e}")
+        
+        logger.info(f"[DRIVE] Subiendo archivo nuevo: {nombre_archivo}")
+        
+        # Metadata del archivo
+        file_metadata = {'name': nombre_archivo}
+        if carpeta_id:
+            file_metadata['parents'] = [carpeta_id]
+        
+        media = MediaFileUpload(
+            ruta_archivo,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            resumable=True
+        )
+        
+        # Crear archivo nuevo en Drive
+        file = drive_service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id, name'
+        ).execute()
+        
+        logger.info(f"[DRIVE] ✅ Archivo subido: {file.get('name')} (ID: {file.get('id')})")
+        return True
+        
+    except Exception as e:
+        logger.error(f"[DRIVE] Error subiendo archivo nuevo: {e}")
+        return False
+
+
 # ============================================================
 # DATABASE MANAGER
 # ============================================================
@@ -2087,7 +2157,8 @@ def main():
     cierre = crear_cierre_dia(
         config.EXCEL_EMPRESA,
         config.DB_PATH,
-        subir_excel_a_drive if config.DRIVE_ENABLED else None
+        subir_excel_a_drive if config.DRIVE_ENABLED else None,
+        subir_archivo_nuevo_a_drive if config.DRIVE_ENABLED else None
     )
     cierre_dia_handler = crear_cierre_handler(cierre, es_admin, teclado_admin)
     app.add_handler(cierre_dia_handler.get_conversation_handler())

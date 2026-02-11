@@ -114,18 +114,21 @@ class CierreDia:
     
     def __init__(self, excel_path: str, db_path: str, 
                  directorio_excels: str = None,
-                 subir_drive_func=None):
+                 subir_drive_func=None,
+                 subir_archivo_nuevo_func=None):
         """
         Args:
             excel_path: Ruta al Excel actual (PRUEBO.xlsx)
             db_path: Ruta a la base de datos
             directorio_excels: Directorio donde guardar los Excels nuevos
-            subir_drive_func: Función para subir a Drive
+            subir_drive_func: Función para subir PRUEBO.xlsx a Drive
+            subir_archivo_nuevo_func: Función para subir archivos nuevos a Drive
         """
         self.excel_path = excel_path
         self.db_path = db_path
         self.directorio = directorio_excels or str(Path(excel_path).parent)
         self.subir_drive = subir_drive_func
+        self.subir_archivo_nuevo = subir_archivo_nuevo_func
         
         # Archivo que guarda el Excel activo
         self.archivo_activo_path = os.path.join(self.directorio, "excel_activo.txt")
@@ -499,12 +502,15 @@ class CierreDia:
             resultado['excel_nuevo'] = nombre_nuevo
             resultado['ruta_excel_nuevo'] = ruta_nueva
             
-            # Paso 3: Subir a Drive (solo el nuevo Excel si se desea)
-            if self.subir_drive:
-                logger.info("[CIERRE] Paso 3: Subiendo a Drive...")
+            # Paso 3: Subir el nuevo Excel a Drive
+            if self.subir_archivo_nuevo:
+                logger.info(f"[CIERRE] Paso 3: Subiendo {nombre_nuevo} a Drive...")
                 try:
-                    self.subir_drive()
-                    resultado['drive_subido'] = True
+                    if self.subir_archivo_nuevo(ruta_nueva, nombre_nuevo):
+                        resultado['drive_subido'] = True
+                        logger.info(f"[CIERRE] ✅ {nombre_nuevo} subido a Drive")
+                    else:
+                        resultado['errores'].append("No se pudo subir a Drive")
                 except Exception as e:
                     resultado['errores'].append(f"Error subiendo a Drive: {e}")
             
@@ -586,14 +592,15 @@ class CierreDia:
 # FUNCIÓN PARA INTEGRAR EN BOT
 # ============================================================
 
-def crear_cierre_dia(excel_path: str, db_path: str, subir_drive_func=None):
+def crear_cierre_dia(excel_path: str, db_path: str, subir_drive_func=None, subir_archivo_nuevo_func=None):
     """
     Crea una instancia del módulo de cierre de día.
     """
     return CierreDia(
         excel_path=excel_path,
         db_path=db_path,
-        subir_drive_func=subir_drive_func
+        subir_drive_func=subir_drive_func,
+        subir_archivo_nuevo_func=subir_archivo_nuevo_func
     )
 
 
