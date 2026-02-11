@@ -240,14 +240,13 @@ class CierreDiaHandler:
         if resultado['exito']:
             texto = (
                 f"✅ CIERRE COMPLETADO\n\n"
-                f"📁 Excel anterior: {resultado['excel_anterior']}\n"
-                f"📁 Excel nuevo: {resultado['excel_nuevo']}\n\n"
+                f"📁 Excel original: {resultado['excel_original']} (sin modificar)\n"
+                f"📁 Excel CREADO: {resultado['excel_nuevo']}\n\n"
                 f"📊 Exportados:\n"
                 f"• {resultado['conductores_exportados']} conductores\n"
                 f"• {resultado['viajes_pendientes']} viajes pendientes\n"
                 f"• {resultado['viajes_completados']} viajes archivados\n\n"
-                f"💾 BD sincronizada: {'✅' if resultado['bd_sincronizada'] else '❌'}\n"
-                f"☁️ Drive actualizado: {'✅' if resultado['drive_subido'] else '❌'}"
+                f"☁️ Drive actualizado: {'✅' if resultado.get('drive_subido') else '❌'}"
             )
         else:
             texto = (
