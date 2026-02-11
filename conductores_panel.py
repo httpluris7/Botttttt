@@ -92,6 +92,7 @@ class ConductoresPanel:
                 ],
                 COND_FICHA: [
                     CallbackQueryHandler(self.menu_editar, pattern="^cond_editar$"),
+                    CallbackQueryHandler(self.volver_ficha, pattern="^cond_volver_ficha$"),
                     CallbackQueryHandler(self.volver_lista, pattern="^cond_volver_lista$"),
                     CallbackQueryHandler(self.cancelar_callback, pattern="^cond_cancelar$"),
                 ],
