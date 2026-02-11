@@ -1,7 +1,11 @@
 """
-HANDLER DE CIERRE DE DÍA (Telegram)
-====================================
+HANDLER DE CIERRE DE DÍA v1.1 (Telegram)
+=========================================
 Interfaz de Telegram para el cierre de día.
+
+CAMBIOS v1.1:
+- FIX Bug #5: Usar números directamente, no len()
+- FIX Bug #6: Advertir si ya existe cierre de hoy + opción actualizar
 
 Menú:
 📅 Cierre de día
@@ -33,22 +37,17 @@ logger = logging.getLogger(__name__)
 CIERRE_MENU = 400
 CIERRE_CONFIRMAR = 401
 CIERRE_HISTORICO = 402
+CIERRE_EXISTE = 403  # NUEVO: Estado para cuando ya existe archivo
 
 
 class CierreDiaHandler:
     """Handler de Telegram para cierre de día"""
     
     def __init__(self, cierre: CierreDia, es_admin_func, teclado_admin):
-        """
-        Args:
-            cierre: Instancia de CierreDia
-            es_admin_func: Función para verificar si es admin
-            teclado_admin: Teclado de admin para volver
-        """
         self.cierre = cierre
         self.es_admin = es_admin_func
         self.teclado_admin = teclado_admin
-        logger.info("[CIERRE_HANDLER] Handler de cierre de día inicializado")
+        logger.info("[CIERRE_HANDLER] Handler de cierre de día v1.1 inicializado")
     
     def get_conversation_handler(self):
         """Devuelve el ConversationHandler"""
@@ -66,6 +65,11 @@ class CierreDiaHandler:
                 ],
                 CIERRE_CONFIRMAR: [
                     CallbackQueryHandler(self.ejecutar_cierre, pattern="^cierre_confirmar_si$"),
+                    CallbackQueryHandler(self.volver_menu, pattern="^cierre_volver$"),
+                    CallbackQueryHandler(self.cancelar_callback, pattern="^cierre_cancelar$"),
+                ],
+                CIERRE_EXISTE: [
+                    CallbackQueryHandler(self.actualizar_cierre_existente, pattern="^cierre_actualizar$"),
                     CallbackQueryHandler(self.volver_menu, pattern="^cierre_volver$"),
                     CallbackQueryHandler(self.cancelar_callback, pattern="^cierre_cancelar$"),
                 ],
@@ -96,7 +100,6 @@ class CierreDiaHandler:
             )
             return ConversationHandler.END
         
-        # Obtener info del día actual
         verificacion = self.cierre.verificar_cierre_seguro()
         excel_activo = self.cierre.obtener_excel_activo()
         
@@ -130,11 +133,11 @@ class CierreDiaHandler:
         return CIERRE_MENU
     
     # ============================================================
-    # RESUMEN DETALLADO
+    # RESUMEN DETALLADO - BUGFIX #5
     # ============================================================
     
     async def mostrar_resumen(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Muestra resumen detallado del día"""
+        """Muestra resumen detallado del día - BUGFIX #5: usar números directamente"""
         query = update.callback_query
         await query.answer()
         
@@ -142,32 +145,18 @@ class CierreDiaHandler:
         
         texto = "📊 RESUMEN DETALLADO\n\n"
         
-        # Conductores que terminaron
-        texto += f"✅ Terminaron viaje ({len(analisis['conductores_terminaron'])}):\n"
-        for c in analisis['conductores_terminaron'][:5]:
-            texto += f"  • {c.nombre} → {c.ubicacion or 'Sin ubicación'}\n"
-        if len(analisis['conductores_terminaron']) > 5:
-            texto += f"  ... y {len(analisis['conductores_terminaron']) - 5} más\n"
+        # BUGFIX #5: Usar números directamente, no len()
+        num_terminaron = analisis.get('conductores_terminaron', 0)
+        texto += f"✅ Conductores que terminaron: {num_terminaron}\n"
         
-        # Conductores disponibles (sin viaje)
-        if analisis.get('conductores_disponibles'):
-            texto += f"\n🚛 Disponibles ({len(analisis['conductores_disponibles'])}):\n"
-            for c in analisis['conductores_disponibles'][:5]:
-                texto += f"  • {c.nombre} ({c.ubicacion or '?'})\n"
-            if len(analisis['conductores_disponibles']) > 5:
-                texto += f"  ... y {len(analisis['conductores_disponibles']) - 5} más\n"
+        num_disponibles = analisis.get('conductores_disponibles', 0)
+        texto += f"🚛 Conductores disponibles: {num_disponibles}\n"
         
-        # Viajes pendientes
-        texto += f"\n⏳ Viajes pendientes ({len(analisis['viajes_pendientes'])}):\n"
-        for v in analisis['viajes_pendientes'][:5]:
-            cliente = v.datos.get('cliente', 'N/A')
-            carga = v.datos.get('lugar_carga', '?')
-            descarga = v.datos.get('lugar_descarga', '?')
-            texto += f"  • {cliente}: {carga} → {descarga}\n"
-        if len(analisis['viajes_pendientes']) > 5:
-            texto += f"  ... y {len(analisis['viajes_pendientes']) - 5} más\n"
+        num_pendientes = analisis.get('viajes_pendientes', 0)
+        texto += f"⏳ Viajes pendientes: {num_pendientes}\n"
         
-        texto += f"\n🏁 Viajes completados: {len(analisis['viajes_completados'])}\n"
+        num_completados = analisis.get('viajes_completados', 0)
+        texto += f"🏁 Viajes completados: {num_completados}\n"
         
         keyboard = [
             [InlineKeyboardButton("🔄 Cerrar día actual", callback_data="cierre_ejecutar")],
@@ -183,17 +172,42 @@ class CierreDiaHandler:
         return CIERRE_MENU
     
     # ============================================================
-    # CONFIRMAR CIERRE
+    # CONFIRMAR CIERRE - BUGFIX #6
     # ============================================================
     
     async def confirmar_cierre(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Pide confirmación para el cierre"""
+        """Pide confirmación para el cierre - BUGFIX #6: avisar si ya existe"""
         query = update.callback_query
         await query.answer()
         
         verificacion = self.cierre.verificar_cierre_seguro()
         nombre_nuevo = self.cierre.generar_nombre_excel()
         
+        # BUGFIX #6: Verificar si ya existe el archivo de hoy
+        if verificacion.get('excel_hoy_existe'):
+            texto = (
+                f"⚠️ YA EXISTE CIERRE DE HOY\n\n"
+                f"📁 Archivo: {nombre_nuevo}\n\n"
+                f"¿Qué deseas hacer?\n\n"
+                f"• *Actualizar*: Sobrescribir el archivo existente con los cambios actuales\n"
+                f"• *Cancelar*: No hacer nada"
+            )
+            
+            keyboard = [
+                [InlineKeyboardButton("🔄 Actualizar cierre", callback_data="cierre_actualizar")],
+                [InlineKeyboardButton("⬅️ Volver", callback_data="cierre_volver")],
+                [InlineKeyboardButton("❌ Cancelar", callback_data="cierre_cancelar")]
+            ]
+            
+            await query.edit_message_text(
+                texto,
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            
+            return CIERRE_EXISTE
+        
+        # No existe, continuar normal
         texto = (
             f"⚠️ CONFIRMAR CIERRE DE DÍA\n\n"
             f"Se creará: {nombre_nuevo}\n\n"
@@ -220,9 +234,45 @@ class CierreDiaHandler:
         
         return CIERRE_CONFIRMAR
     
-    # ============================================================
-    # EJECUTAR CIERRE
-    # ============================================================
+    async def actualizar_cierre_existente(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """BUGFIX #6: Actualiza el cierre existente"""
+        query = update.callback_query
+        await query.answer()
+        
+        await query.edit_message_text(
+            "🔄 Actualizando cierre de día...\n\n"
+            "⏳ Procesando cambios..."
+        )
+        
+        # Ejecutar cierre (sobrescribirá el archivo existente)
+        resultado = self.cierre.ejecutar_cierre()
+        
+        if resultado['exito']:
+            texto = (
+                f"✅ CIERRE ACTUALIZADO\n\n"
+                f"📁 Excel: {resultado['excel_nuevo']}\n\n"
+                f"📊 Exportados:\n"
+                f"• {resultado['conductores_exportados']} conductores\n"
+                f"• {resultado['viajes_pendientes']} viajes pendientes\n"
+                f"• {resultado['viajes_completados']} viajes archivados\n\n"
+                f"☁️ Drive actualizado: {'✅' if resultado.get('drive_subido') else '❌'}"
+            )
+        else:
+            texto = (
+                f"❌ ERROR EN ACTUALIZACIÓN\n\n"
+                f"Errores:\n"
+            )
+            for error in resultado['errores']:
+                texto += f"• {error}\n"
+        
+        await query.edit_message_text(texto)
+        
+        await query.message.reply_text(
+            "¿Qué más necesitas?",
+            reply_markup=self.teclado_admin
+        )
+        
+        return ConversationHandler.END
     
     async def ejecutar_cierre(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Ejecuta el cierre de día"""
@@ -234,7 +284,6 @@ class CierreDiaHandler:
             "⏳ Analizando Excel..."
         )
         
-        # Ejecutar cierre
         resultado = self.cierre.ejecutar_cierre()
         
         if resultado['exito']:
@@ -313,19 +362,17 @@ class CierreDiaHandler:
         
         nombre_excel = query.data.replace("cierre_ver_", "")
         
-        # Buscar el Excel
         excels = self.cierre.listar_excels_historicos(limite=30)
         excel_info = next((e for e in excels if e['nombre'] == nombre_excel), None)
         
         if not excel_info:
             texto = f"❌ No se encontró el archivo: {nombre_excel}"
         else:
-            # Analizar brevemente el Excel
             from openpyxl import load_workbook
             try:
                 wb = load_workbook(excel_info['ruta'])
                 ws = wb.active
-                total_filas = ws.max_row - 1  # Sin cabecera
+                total_filas = ws.max_row - 1
                 wb.close()
                 
                 texto = (
@@ -420,14 +467,5 @@ class CierreDiaHandler:
 def crear_cierre_handler(cierre: CierreDia, es_admin_func, teclado_admin):
     """
     Crea el handler de cierre de día.
-    
-    Uso en bot_transporte.py:
-    
-        from cierre_dia import crear_cierre_dia
-        from cierre_dia_handler import crear_cierre_handler
-        
-        cierre = crear_cierre_dia(config.EXCEL_EMPRESA, config.DB_PATH, ...)
-        cierre_handler = crear_cierre_handler(cierre, es_admin, teclado_admin)
-        app.add_handler(cierre_handler.get_conversation_handler())
     """
     return CierreDiaHandler(cierre, es_admin_func, teclado_admin)

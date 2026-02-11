@@ -1,8 +1,12 @@
 """
-REGISTROS DE CONDUCTOR v1.0
+REGISTROS DE CONDUCTOR v1.1
 ============================
 Permite a los conductores registrar horas de llegada/salida
 en puntos de carga y descarga.
+
+CAMBIOS v1.1:
+- FIX Bug #3: Mensaje claro cuando viaje está COMPLETADO
+- FIX Bug #4: No bloquear descarga después de carga
 
 Flujo:
 1. Conductor pulsa "📝 Registros"
@@ -69,7 +73,7 @@ class RegistrosConductor:
         self.excel_path = excel_path
         self.db_path = db_path
         self.subir_drive = subir_drive_func
-        logger.info("[REGISTROS] Módulo de registros v1.0 inicializado")
+        logger.info("[REGISTROS] Módulo de registros v1.1 inicializado")
     
     def get_conversation_handler(self):
         """Devuelve el ConversationHandler para registros"""
@@ -104,7 +108,10 @@ class RegistrosConductor:
     # ============================================================
     
     def _obtener_viaje_conductor(self, telegram_id: int) -> Optional[Dict]:
-        """Obtiene el viaje activo del conductor"""
+        """
+        Obtiene el viaje activo del conductor.
+        BUGFIX #3: También devuelve viajes completados para mostrar mensaje correcto.
+        """
         try:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
@@ -123,7 +130,7 @@ class RegistrosConductor:
             
             nombre = row['nombre']
             
-            # Buscar viaje activo
+            # Buscar viaje activo (pendiente, en_ruta, asignado)
             cursor.execute("""
                 SELECT * FROM viajes_empresa 
                 WHERE conductor_asignado LIKE ? 
@@ -133,10 +140,29 @@ class RegistrosConductor:
             """, (f"%{nombre}%",))
             
             viaje = cursor.fetchone()
-            conn.close()
             
             if viaje:
+                conn.close()
                 return dict(viaje)
+            
+            # BUGFIX #3: Si no hay viaje activo, buscar si tiene viaje completado
+            cursor.execute("""
+                SELECT * FROM viajes_empresa 
+                WHERE conductor_asignado LIKE ? 
+                AND estado = 'completado'
+                ORDER BY id DESC
+                LIMIT 1
+            """, (f"%{nombre}%",))
+            
+            viaje_completado = cursor.fetchone()
+            conn.close()
+            
+            if viaje_completado:
+                # Devolver viaje con marca especial de completado
+                viaje_dict = dict(viaje_completado)
+                viaje_dict['_completado'] = True
+                return viaje_dict
+            
             return None
             
         except Exception as e:
@@ -150,11 +176,6 @@ class RegistrosConductor:
     def _actualizar_hora_excel(self, fila_excel: int, tipo: str, accion: str) -> bool:
         """
         Actualiza la hora en el Excel.
-        
-        Args:
-            fila_excel: Fila del viaje (0-indexed de la BD)
-            tipo: 'carga' o 'descarga'
-            accion: 'llegada' o 'salida'
         """
         try:
             from openpyxl import load_workbook
@@ -163,7 +184,6 @@ class RegistrosConductor:
                 logger.error(f"[REGISTROS] Excel no encontrado: {self.excel_path}")
                 return False
             
-            # Determinar columna
             clave = f"{tipo}_{accion}"
             columna = COLUMNAS_EXCEL.get(clave)
             
@@ -171,21 +191,17 @@ class RegistrosConductor:
                 logger.error(f"[REGISTROS] Columna no encontrada para: {clave}")
                 return False
             
-            # Hora actual
             hora_actual = datetime.now().strftime("%H:%M")
             
-            # Cargar Excel
             wb = load_workbook(self.excel_path)
             ws = wb.active
             
-            # fila_excel es 0-indexed, openpyxl es 1-indexed
             fila_openpyxl = fila_excel + 1
             
             if fila_openpyxl > ws.max_row:
                 logger.error(f"[REGISTROS] Fila {fila_openpyxl} fuera de rango")
                 return False
             
-            # Escribir hora
             celda = ws.cell(row=fila_openpyxl, column=columna)
             valor_anterior = celda.value
             celda.value = hora_actual
@@ -214,16 +230,6 @@ class RegistrosConductor:
                                          hora_llegada: str = None) -> bool:
         """
         Actualiza la ubicación del conductor cuando completa una descarga.
-        
-        Columnas actualizadas:
-        - Col B (UBICACIÓN): lugar de descarga
-        - Col C (H.LL): hora de llegada a la descarga
-        - Col D (H.SA): hora de salida de la descarga (hora actual)
-        
-        Args:
-            fila_excel: Fila del viaje (0-indexed de la BD)
-            lugar_descarga: Lugar donde descargó (nueva ubicación)
-            hora_llegada: Hora de llegada a la descarga (si se tiene)
         """
         try:
             from openpyxl import load_workbook
@@ -253,7 +259,6 @@ class RegistrosConductor:
             if hora_llegada:
                 celda_hll.value = hora_llegada
             else:
-                # Intentar obtener la hora de llegada a descarga de Col R
                 hora_llegada_descarga = ws.cell(row=fila_openpyxl, column=COLUMNAS_EXCEL['descarga_llegada']).value
                 if hora_llegada_descarga:
                     celda_hll.value = hora_llegada_descarga
@@ -284,7 +289,6 @@ class RegistrosConductor:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Buscar el conductor por fila_excel del viaje
             cursor.execute("""
                 SELECT conductor_asignado FROM viajes_empresa 
                 WHERE fila_excel = ?
@@ -309,9 +313,6 @@ class RegistrosConductor:
     def _verificar_registro_existente(self, fila_excel: int, tipo: str, accion: str) -> Optional[str]:
         """
         Verifica si ya existe un registro en la celda.
-        
-        Returns:
-            La hora registrada si existe, None si está vacío
         """
         try:
             from openpyxl import load_workbook
@@ -347,6 +348,22 @@ class RegistrosConductor:
             logger.error(f"[REGISTROS] Error verificando registro: {e}")
             return None
     
+    def _marcar_viaje_completado(self, viaje_id: int):
+        """Marca un viaje como completado en la BD"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE viajes_empresa 
+                SET estado = 'completado'
+                WHERE id = ?
+            """, (viaje_id,))
+            conn.commit()
+            conn.close()
+            logger.info(f"[REGISTROS] Viaje {viaje_id} marcado como completado")
+        except Exception as e:
+            logger.error(f"[REGISTROS] Error marcando viaje completado: {e}")
+    
     # ============================================================
     # HANDLERS DEL CONVERSATION
     # ============================================================
@@ -355,7 +372,7 @@ class RegistrosConductor:
         """Inicia el flujo de registros"""
         telegram_id = update.effective_user.id
         
-        # Verificar que tiene viaje activo
+        # Verificar que tiene viaje
         viaje = self._obtener_viaje_conductor(telegram_id)
         
         if not viaje:
@@ -363,6 +380,20 @@ class RegistrosConductor:
             await update.message.reply_text(
                 "❌ No tienes ningún viaje asignado actualmente.\n\n"
                 "Cuando tengas un viaje, podrás registrar tus llegadas y salidas.",
+                reply_markup=teclado_conductor
+            )
+            return ConversationHandler.END
+        
+        # BUGFIX #3: Viaje completado - mensaje diferente
+        if viaje.get('_completado'):
+            from teclados import teclado_conductor
+            cliente = viaje.get('cliente', 'N/A')
+            lugar_descarga = viaje.get('lugar_entrega', viaje.get('lugar_descarga', 'N/A'))
+            await update.message.reply_text(
+                f"✅ *VIAJE COMPLETADO*\n\n"
+                f"Tu último viaje ({cliente}) a {lugar_descarga} ya está completado.\n\n"
+                f"Espera a que te asignen un nuevo viaje.",
+                parse_mode="Markdown",
                 reply_markup=teclado_conductor
             )
             return ConversationHandler.END
@@ -474,7 +505,6 @@ class RegistrosConductor:
             hora_existente = self._verificar_registro_existente(fila_excel, tipo, accion)
             
             if hora_existente:
-                # Ya existe registro, no permitir otro
                 emoji_tipo = "📥" if tipo == 'carga' else "📤"
                 emoji_accion = "🚛" if accion == 'llegada' else "🏁"
                 
@@ -567,7 +597,7 @@ class RegistrosConductor:
         # Actualizar Excel (hora de carga/descarga)
         exito = self._actualizar_hora_excel(fila_excel, tipo, accion)
         
-        # Si es SALIDA de DESCARGA → actualizar ubicación del conductor
+        # Si es SALIDA de DESCARGA → actualizar ubicación del conductor y marcar completado
         ubicacion_actualizada = False
         if tipo == 'descarga' and accion == 'salida' and exito:
             lugar_descarga = viaje.get('lugar_entrega', viaje.get('lugar_descarga', ''))
@@ -576,6 +606,11 @@ class RegistrosConductor:
                     fila_excel, 
                     lugar_descarga
                 )
+                # Marcar viaje como completado
+                viaje_id = viaje.get('id')
+                if viaje_id:
+                    self._marcar_viaje_completado(viaje_id)
+                
                 # Subir a Drive después de actualizar ubicación
                 if self.subir_drive and ubicacion_actualizada:
                     try:
@@ -756,18 +791,6 @@ class RegistrosConductor:
 def crear_registros_conductor(excel_path: str, db_path: str, subir_drive_func=None):
     """
     Crea una instancia del módulo de registros.
-    
-    Uso en bot_transporte.py:
-    
-        from registros_conductor import crear_registros_conductor
-        
-        # En main():
-        registros = crear_registros_conductor(
-            config.EXCEL_EMPRESA,
-            config.DB_PATH,
-            subir_excel_a_drive if config.DRIVE_ENABLED else None
-        )
-        app.add_handler(registros.get_conversation_handler())
     """
     return RegistrosConductor(
         excel_path=excel_path,

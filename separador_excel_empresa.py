@@ -1,7 +1,11 @@
 """
-SEPARADOR DE EXCEL DE EMPRESA
-==============================
+SEPARADOR DE EXCEL DE EMPRESA v2.1
+===================================
 Lee PRUEBO.xlsx (formato de la empresa) y lo separa en tablas internas.
+
+CAMBIOS v2.1:
+- FIX Bug #1: Preserva telegram_id y telefono durante sync
+- FIX Bug #2: Preserva estado de viajes durante sync
 
 Los trabajadores siguen usando su Excel como siempre.
 El sistema extrae los datos automáticamente en segundo plano.
@@ -10,8 +14,6 @@ Tablas generadas:
 - conductores_empresa: Todos los conductores únicos
 - viajes_empresa: Todos los viajes
 - vehiculos_empresa: Tractoras y remolques
-
-Version 2.0 - Con columnas DIRECCION_CARGA y DIRECCION_DESCARGA
 """
 
 import sqlite3
@@ -152,7 +154,6 @@ class SeparadorExcelEmpresa:
                 if 'ZONA' in valor_str:
                     return valor_str
                 if 'FECHA' in valor_str:
-                    # Buscar la zona en la fila anterior
                     continue
         return "SIN ZONA"
     
@@ -174,19 +175,16 @@ class SeparadorExcelEmpresa:
             
             nombre_str = str(nombre).strip()
             
-            # Ignorar headers y secciones especiales
             if self._es_header_o_ignorar(nombre_str):
                 continue
             
             tractora = str(df.iloc[idx, 6]).strip() if pd.notna(df.iloc[idx, 6]) else ""
             
-            # Clave única: nombre + tractora
             clave = f"{nombre_str}|{tractora}"
             if clave in conductores_vistos:
                 continue
             conductores_vistos.add(clave)
             
-            # Extraer datos
             conductor = {
                 "nombre": nombre_str,
                 "tractora": tractora,
@@ -208,37 +206,31 @@ class SeparadorExcelEmpresa:
         viajes = []
         
         for idx in range(2, len(df)):
-            cliente = df.iloc[idx, 8]  # Columna CLIENTE
+            cliente = df.iloc[idx, 8]
             
             if pd.isna(cliente) or not str(cliente).strip():
                 continue
             
             cliente_str = str(cliente).strip()
             
-            # Ignorar headers
             if self._es_header_o_ignorar(cliente_str):
                 continue
             
-            # Verificar que tiene lugar de carga o entrega
             lugar_carga = str(df.iloc[idx, 13]).strip() if pd.notna(df.iloc[idx, 13]) else ""
             lugar_entrega = str(df.iloc[idx, 16]).strip() if pd.notna(df.iloc[idx, 16]) else ""
             
             if not lugar_carga and not lugar_entrega:
                 continue
             
-            # Extraer direcciones (columnas AD=28 y AE=29, índice 0-based)
             direccion_carga = ""
             direccion_descarga = ""
             
-            # Columna AD (índice 28) = DIRECCION_CARGA
             if len(df.columns) > 28 and pd.notna(df.iloc[idx, 28]):
                 direccion_carga = str(df.iloc[idx, 28]).strip()
             
-            # Columna AE (índice 29) = DIRECCION_DESCARGA
             if len(df.columns) > 29 and pd.notna(df.iloc[idx, 29]):
                 direccion_descarga = str(df.iloc[idx, 29]).strip()
             
-            # Extraer precio y km de forma segura
             try:
                 precio = float(df.iloc[idx, 22]) if pd.notna(df.iloc[idx, 22]) else 0
             except:
@@ -290,7 +282,6 @@ class SeparadorExcelEmpresa:
         matriculas_vistas = set()
         
         for c in conductores:
-            # Tractora
             if c["tractora"] and c["tractora"] not in matriculas_vistas:
                 if not self._es_header_o_ignorar(c["tractora"]):
                     matriculas_vistas.add(c["tractora"])
@@ -300,7 +291,6 @@ class SeparadorExcelEmpresa:
                         "conductor_habitual": c["nombre"]
                     })
             
-            # Remolque
             if c["remolque"] and c["remolque"] not in matriculas_vistas:
                 if not self._es_header_o_ignorar(c["remolque"]):
                     matriculas_vistas.add(c["remolque"])
@@ -313,14 +303,92 @@ class SeparadorExcelEmpresa:
         logger.info(f"[SEPARADOR] Vehículos extraídos: {len(vehiculos)}")
         return vehiculos
     
+    def _preservar_datos_conductores(self, cursor) -> Dict[str, Dict]:
+        """
+        BUGFIX #1: Guarda telegram_id y telefono antes de borrar.
+        Returns: Dict {nombre_upper: {'telegram_id': X, 'telefono': Y}}
+        """
+        datos_preservados = {}
+        cursor.execute("""
+            SELECT nombre, telegram_id, telefono 
+            FROM conductores_empresa 
+            WHERE telegram_id IS NOT NULL OR telefono IS NOT NULL
+        """)
+        for row in cursor.fetchall():
+            nombre = row[0].upper().strip() if row[0] else ""
+            if nombre:
+                datos_preservados[nombre] = {
+                    'telegram_id': row[1],
+                    'telefono': row[2]
+                }
+        logger.info(f"[SEPARADOR] Preservados datos de {len(datos_preservados)} conductores")
+        return datos_preservados
+    
+    def _preservar_estados_viajes(self, cursor) -> Dict[str, str]:
+        """
+        BUGFIX #2: Guarda estado de viajes antes de borrar.
+        Returns: Dict {clave_viaje: estado}
+        """
+        estados_preservados = {}
+        cursor.execute("""
+            SELECT cliente, lugar_carga, lugar_entrega, conductor_asignado, estado 
+            FROM viajes_empresa 
+            WHERE estado IS NOT NULL AND estado != 'pendiente'
+        """)
+        for row in cursor.fetchall():
+            cliente = (row[0] or "").upper().strip()
+            carga = (row[1] or "").upper().strip()
+            entrega = (row[2] or "").upper().strip()
+            conductor = (row[3] or "").upper().strip()
+            clave = f"{cliente}|{carga}|{entrega}|{conductor}"
+            estados_preservados[clave] = row[4]
+        logger.info(f"[SEPARADOR] Preservados estados de {len(estados_preservados)} viajes")
+        return estados_preservados
+    
+    def _restaurar_datos_conductores(self, cursor, datos_preservados: Dict[str, Dict]):
+        """BUGFIX #1: Restaura telegram_id y telefono después de insertar"""
+        restaurados = 0
+        for nombre_upper, datos in datos_preservados.items():
+            cursor.execute("""
+                UPDATE conductores_empresa 
+                SET telegram_id = ?, telefono = ?
+                WHERE UPPER(TRIM(nombre)) = ?
+            """, (datos['telegram_id'], datos['telefono'], nombre_upper))
+            if cursor.rowcount > 0:
+                restaurados += 1
+        logger.info(f"[SEPARADOR] Restaurados datos de {restaurados} conductores")
+    
+    def _restaurar_estados_viajes(self, cursor, estados_preservados: Dict[str, str]):
+        """BUGFIX #2: Restaura estados de viajes después de insertar"""
+        restaurados = 0
+        for clave, estado in estados_preservados.items():
+            partes = clave.split("|")
+            if len(partes) == 4:
+                cliente, carga, entrega, conductor = partes
+                cursor.execute("""
+                    UPDATE viajes_empresa 
+                    SET estado = ?
+                    WHERE UPPER(TRIM(cliente)) = ? 
+                    AND UPPER(TRIM(lugar_carga)) = ?
+                    AND UPPER(TRIM(lugar_entrega)) = ?
+                    AND UPPER(TRIM(conductor_asignado)) = ?
+                """, (estado, cliente, carga, entrega, conductor))
+                if cursor.rowcount > 0:
+                    restaurados += 1
+        logger.info(f"[SEPARADOR] Restaurados estados de {restaurados} viajes")
+    
     def guardar_en_bd(self, conductores: List[Dict], viajes: List[Dict], 
                       vehiculos: List[Dict], archivo: str, hash_archivo: str):
-        """Guarda los datos extraídos en la base de datos"""
+        """Guarda los datos extraídos en la base de datos (preservando telegram_id y estados)"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         fecha_sync = datetime.now().isoformat()
         
         try:
+            # BUGFIX #1 y #2: Preservar datos antes de borrar
+            datos_conductores = self._preservar_datos_conductores(cursor)
+            estados_viajes = self._preservar_estados_viajes(cursor)
+            
             # Limpiar tablas anteriores
             cursor.execute("DELETE FROM conductores_empresa")
             cursor.execute("DELETE FROM viajes_empresa")
@@ -337,7 +405,7 @@ class SeparadorExcelEmpresa:
                       c["hora_llegada"], c["hora_salida"], c["absentismo"],
                       c["zona"], c["fila_excel"], fecha_sync))
             
-            # Insertar viajes (con direcciones)
+            # Insertar viajes
             for v in viajes:
                 cursor.execute("""
                     INSERT INTO viajes_empresa
@@ -362,6 +430,10 @@ class SeparadorExcelEmpresa:
                     VALUES (?, ?, ?, ?)
                 """, (veh["matricula"], veh["tipo"], veh["conductor_habitual"], fecha_sync))
             
+            # BUGFIX #1 y #2: Restaurar datos preservados
+            self._restaurar_datos_conductores(cursor, datos_conductores)
+            self._restaurar_estados_viajes(cursor, estados_viajes)
+            
             # Log de sincronización
             cursor.execute("""
                 INSERT INTO sync_excel_empresa
@@ -383,9 +455,7 @@ class SeparadorExcelEmpresa:
             conn.close()
     
     def sincronizar_desde_archivo(self, ruta_excel: str, forzar: bool = False) -> Dict:
-        """
-        Sincroniza el Excel de la empresa a las tablas internas.
-        """
+        """Sincroniza el Excel de la empresa a las tablas internas."""
         logger.info(f"[SEPARADOR] Iniciando sincronización: {ruta_excel}")
         
         if not Path(ruta_excel).exists():
@@ -518,20 +588,7 @@ class SeparadorExcelEmpresa:
     
     def actualizar_transportista_excel(self, ruta_excel: str, fila_excel: int, 
                                         nombre_conductor: str) -> bool:
-        """
-        Actualiza la columna TRANSPORTISTA (columna V, índice 21) en el Excel.
-        
-        Esta es la columna de la derecha que indica quién tiene asignado el viaje.
-        Se llama cuando el bot asigna un viaje a un conductor.
-        
-        Args:
-            ruta_excel: Ruta al archivo PRUEBO.xlsx
-            fila_excel: Número de fila en el Excel (0-indexed como está en la BD)
-            nombre_conductor: Nombre del conductor a escribir
-            
-        Returns:
-            True si se actualizó correctamente
-        """
+        """Actualiza la columna TRANSPORTISTA en el Excel."""
         try:
             from openpyxl import load_workbook
             
@@ -539,26 +596,20 @@ class SeparadorExcelEmpresa:
                 logger.error(f"[SEPARADOR] Excel no encontrado: {ruta_excel}")
                 return False
             
-            # Cargar el workbook manteniendo estilos y formato
             wb = load_workbook(ruta_excel)
             ws = wb.active
             
-            # Columna V = índice 22 en openpyxl (1-indexed)
-            # fila_excel viene 0-indexed, openpyxl es 1-indexed, así que +1
             fila_openpyxl = fila_excel + 1
-            columna_transportista = 22  # Columna V
+            columna_transportista = 22
             
-            # Verificar que la fila existe
             if fila_openpyxl > ws.max_row:
-                logger.error(f"[SEPARADOR] Fila {fila_openpyxl} fuera de rango (max: {ws.max_row})")
+                logger.error(f"[SEPARADOR] Fila {fila_openpyxl} fuera de rango")
                 return False
             
-            # Escribir el nombre del conductor
             celda = ws.cell(row=fila_openpyxl, column=columna_transportista)
             valor_anterior = celda.value
             celda.value = nombre_conductor
             
-            # Guardar el archivo
             wb.save(ruta_excel)
             wb.close()
             
@@ -572,17 +623,7 @@ class SeparadorExcelEmpresa:
     
     def actualizar_asignacion_viaje(self, viaje_id: int, nombre_conductor: str,
                                      ruta_excel: str) -> Dict:
-        """
-        Actualiza la asignación de un viaje tanto en BD como en Excel.
-        
-        Args:
-            viaje_id: ID del viaje en la BD
-            nombre_conductor: Nombre del conductor asignado
-            ruta_excel: Ruta al archivo Excel
-            
-        Returns:
-            Dict con resultado de la operación
-        """
+        """Actualiza la asignación de un viaje tanto en BD como en Excel."""
         resultado = {
             "exito": False,
             "bd_actualizada": False,
@@ -594,7 +635,6 @@ class SeparadorExcelEmpresa:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Obtener fila_excel del viaje
             cursor.execute("SELECT fila_excel FROM viajes_empresa WHERE id = ?", (viaje_id,))
             row = cursor.fetchone()
             
@@ -606,7 +646,6 @@ class SeparadorExcelEmpresa:
             fila_excel = row[0]
             resultado["fila_excel"] = fila_excel
             
-            # Actualizar BD
             cursor.execute("""
                 UPDATE viajes_empresa 
                 SET conductor_asignado = ?
@@ -616,7 +655,6 @@ class SeparadorExcelEmpresa:
             conn.close()
             resultado["bd_actualizada"] = True
             
-            # Actualizar Excel
             if fila_excel and ruta_excel:
                 resultado["excel_actualizado"] = self.actualizar_transportista_excel(
                     ruta_excel, fila_excel, nombre_conductor
@@ -628,43 +666,3 @@ class SeparadorExcelEmpresa:
         except Exception as e:
             logger.error(f"[SEPARADOR] Error en actualizar_asignacion_viaje: {e}")
             return resultado
-
-
-# ============================================================
-# TEST
-# ============================================================
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    
-    print("="*70)
-    print("TEST SEPARADOR EXCEL EMPRESA")
-    print("="*70)
-    
-    rutas = [
-        "/mnt/user-data/uploads/PRUEBO.xlsx",
-        "PRUEBO.xlsx"
-    ]
-    
-    ruta = None
-    for r in rutas:
-        if Path(r).exists():
-            ruta = r
-            break
-    
-    if not ruta:
-        print("❌ No se encontró PRUEBO.xlsx")
-        exit(1)
-    
-    separador = SeparadorExcelEmpresa("test_empresa.db")
-    resultado = separador.sincronizar_desde_archivo(ruta)
-    
-    print(f"\n📊 RESULTADO: {resultado}")
-    
-    resumen = separador.obtener_resumen()
-    print(f"\n📋 RESUMEN:")
-    print(f"   Conductores: {resumen['conductores']}")
-    print(f"   Viajes: {resumen['viajes']}")
-    print(f"   Vehículos: {resumen['vehiculos']}")
-    print(f"   Zonas: {resumen['zonas']}")
-    print(f"   Última sync: {resumen['ultima_sincronizacion']}")
