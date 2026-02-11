@@ -67,9 +67,12 @@ from gestiones_manager import GestionesManager
 from modificador_viajes_ruta import ModificadorViajesRuta
 from registros_conductor import crear_registros_conductor
 from incidencias_conductor import crear_incidencias_conductor
+from cierre_dia import crear_cierre_dia
+from cierre_dia_handler import crear_cierre_handler
 
 gestiones_manager = None
 modificador_ruta = None
+cierre_dia_handler = None
 
 EQUIVALENCIAS_DISTANCIA = [
     (500, "Pamplona - Madrid"),
@@ -2078,6 +2081,17 @@ def main():
     )
     app.add_handler(incidencias.get_conversation_handler())
     logger.info("✅ Incidencias conductor")
+    
+    # Cierre de día
+    global cierre_dia_handler
+    cierre = crear_cierre_dia(
+        config.EXCEL_EMPRESA,
+        config.DB_PATH,
+        subir_excel_a_drive if config.DRIVE_ENABLED else None
+    )
+    cierre_dia_handler = crear_cierre_handler(cierre, es_admin, teclado_admin)
+    app.add_handler(cierre_dia_handler.get_conversation_handler())
+    logger.info("✅ Cierre de día")
     
     # Handlers para callbacks de rutas (ADMIN)
     app.add_handler(CallbackQueryHandler(callback_ver_rutas, pattern="^rutas:(?!volver)"))

@@ -41,7 +41,8 @@ teclado_conductor = ReplyKeyboardMarkup(
 
 BOTONES_ADMIN = [
     ["📦 Viajes y rutas", "🚛 Flota"],
-    ["📊 Informes", "🔄 Sincronizar"]
+    ["📊 Informes", "🔄 Sincronizar"],
+    ["📅 Cierre de día"]
 ]
 
 teclado_admin = ReplyKeyboardMarkup(
@@ -140,6 +141,7 @@ MAPEO_BOTONES = {
     "🚛 Flota": "menu_flota",
     "📊 Informes": "menu_informes",
     "🔄 Sincronizar": "sincronizar",
+    "📅 Cierre de día": "cierre_dia",
     "⬅️ Volver al menú": "volver_menu",
     
     # Admin - Submenú Viajes

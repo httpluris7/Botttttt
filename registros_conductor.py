@@ -306,6 +306,47 @@ class RegistrosConductor:
         except Exception as e:
             logger.error(f"[REGISTROS] Error actualizando BD: {e}")
     
+    def _verificar_registro_existente(self, fila_excel: int, tipo: str, accion: str) -> Optional[str]:
+        """
+        Verifica si ya existe un registro en la celda.
+        
+        Returns:
+            La hora registrada si existe, None si está vacío
+        """
+        try:
+            from openpyxl import load_workbook
+            
+            if not Path(self.excel_path).exists():
+                return None
+            
+            clave = f"{tipo}_{accion}"
+            columna = COLUMNAS_EXCEL.get(clave)
+            
+            if not columna:
+                return None
+            
+            wb = load_workbook(self.excel_path)
+            ws = wb.active
+            
+            fila_openpyxl = fila_excel + 1
+            
+            if fila_openpyxl > ws.max_row:
+                wb.close()
+                return None
+            
+            celda = ws.cell(row=fila_openpyxl, column=columna)
+            valor = celda.value
+            wb.close()
+            
+            if valor and str(valor).strip():
+                return str(valor).strip()
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"[REGISTROS] Error verificando registro: {e}")
+            return None
+    
     # ============================================================
     # HANDLERS DEL CONVERSATION
     # ============================================================
@@ -333,12 +374,30 @@ class RegistrosConductor:
         lugar_carga = viaje.get('lugar_carga', 'N/A')
         lugar_descarga = viaje.get('lugar_entrega', viaje.get('lugar_descarga', 'N/A'))
         cliente = viaje.get('cliente', 'N/A')
+        fila_excel = viaje.get('fila_excel')
+        
+        # Verificar registros existentes
+        estado_registros = ""
+        if fila_excel:
+            carga_llegada = self._verificar_registro_existente(fila_excel, 'carga', 'llegada')
+            carga_salida = self._verificar_registro_existente(fila_excel, 'carga', 'salida')
+            descarga_llegada = self._verificar_registro_existente(fila_excel, 'descarga', 'llegada')
+            descarga_salida = self._verificar_registro_existente(fila_excel, 'descarga', 'salida')
+            
+            estado_registros = "\n📋 *Estado registros:*\n"
+            estado_registros += f"📥 Carga: "
+            estado_registros += f"{'✅' if carga_llegada else '⬜'} Llegada {carga_llegada or ''} "
+            estado_registros += f"{'✅' if carga_salida else '⬜'} Salida {carga_salida or ''}\n"
+            estado_registros += f"📤 Descarga: "
+            estado_registros += f"{'✅' if descarga_llegada else '⬜'} Llegada {descarga_llegada or ''} "
+            estado_registros += f"{'✅' if descarga_salida else '⬜'} Salida {descarga_salida or ''}\n"
         
         texto = (
             f"📝 *REGISTRAR HORA*\n\n"
             f"🏢 Cliente: *{cliente}*\n"
             f"📥 Carga: {lugar_carga}\n"
-            f"📤 Descarga: {lugar_descarga}\n\n"
+            f"📤 Descarga: {lugar_descarga}\n"
+            f"{estado_registros}\n"
             f"¿Qué quieres registrar?"
         )
         
@@ -406,10 +465,50 @@ class RegistrosConductor:
         await query.answer()
         
         accion = query.data.replace("reg_accion_", "")
-        context.user_data['accion_registro'] = accion
-        
         tipo = context.user_data.get('tipo_registro', 'carga')
         viaje = context.user_data.get('viaje', {})
+        fila_excel = viaje.get('fila_excel')
+        
+        # VERIFICAR SI YA EXISTE REGISTRO
+        if fila_excel:
+            hora_existente = self._verificar_registro_existente(fila_excel, tipo, accion)
+            
+            if hora_existente:
+                # Ya existe registro, no permitir otro
+                emoji_tipo = "📥" if tipo == 'carga' else "📤"
+                emoji_accion = "🚛" if accion == 'llegada' else "🏁"
+                
+                if tipo == 'carga':
+                    lugar = viaje.get('lugar_carga', 'N/A')
+                else:
+                    lugar = viaje.get('lugar_entrega', viaje.get('lugar_descarga', 'N/A'))
+                
+                texto = (
+                    f"⚠️ *YA REGISTRADO*\n\n"
+                    f"{emoji_tipo} {tipo.capitalize()}: *{lugar}*\n"
+                    f"{emoji_accion} {accion.capitalize()}: *{hora_existente}*\n\n"
+                    f"_Este registro ya fue realizado._\n"
+                    f"_No se puede modificar._"
+                )
+                
+                keyboard = [
+                    [
+                        InlineKeyboardButton("⬅️ Volver", callback_data="reg_volver_tipo"),
+                        InlineKeyboardButton("❌ Cancelar", callback_data="reg_cancelar"),
+                    ]
+                ]
+                
+                await query.edit_message_text(
+                    texto,
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                
+                return REG_TIPO  # Volver a selección de tipo
+        
+        # No existe registro, continuar normalmente
+        context.user_data['accion_registro'] = accion
+        
         hora_actual = datetime.now().strftime("%H:%M")
         
         if tipo == 'carga':
@@ -536,12 +635,30 @@ class RegistrosConductor:
         lugar_carga = viaje.get('lugar_carga', 'N/A')
         lugar_descarga = viaje.get('lugar_entrega', viaje.get('lugar_descarga', 'N/A'))
         cliente = viaje.get('cliente', 'N/A')
+        fila_excel = viaje.get('fila_excel')
+        
+        # Verificar registros existentes
+        estado_registros = ""
+        if fila_excel:
+            carga_llegada = self._verificar_registro_existente(fila_excel, 'carga', 'llegada')
+            carga_salida = self._verificar_registro_existente(fila_excel, 'carga', 'salida')
+            descarga_llegada = self._verificar_registro_existente(fila_excel, 'descarga', 'llegada')
+            descarga_salida = self._verificar_registro_existente(fila_excel, 'descarga', 'salida')
+            
+            estado_registros = "\n📋 *Estado registros:*\n"
+            estado_registros += f"📥 Carga: "
+            estado_registros += f"{'✅' if carga_llegada else '⬜'} Llegada {carga_llegada or ''} "
+            estado_registros += f"{'✅' if carga_salida else '⬜'} Salida {carga_salida or ''}\n"
+            estado_registros += f"📤 Descarga: "
+            estado_registros += f"{'✅' if descarga_llegada else '⬜'} Llegada {descarga_llegada or ''} "
+            estado_registros += f"{'✅' if descarga_salida else '⬜'} Salida {descarga_salida or ''}\n"
         
         texto = (
             f"📝 *REGISTRAR HORA*\n\n"
             f"🏢 Cliente: *{cliente}*\n"
             f"📥 Carga: {lugar_carga}\n"
-            f"📤 Descarga: {lugar_descarga}\n\n"
+            f"📤 Descarga: {lugar_descarga}\n"
+            f"{estado_registros}\n"
             f"¿Qué quieres registrar?"
         )
         
