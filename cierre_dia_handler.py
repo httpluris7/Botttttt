@@ -101,16 +101,17 @@ class CierreDiaHandler:
         excel_activo = self.cierre.obtener_excel_activo()
         
         texto = (
-            f"📅 *CIERRE DE DÍA*\n\n"
-            f"📁 Excel activo: `{excel_activo}`\n\n"
-            f"📊 *Estado del día:*\n"
-            f"✅ Viajes completados: {verificacion['viajes_completados']}\n"
+            f"📅 CIERRE DE DÍA\n\n"
+            f"📁 Excel activo: {excel_activo}\n\n"
+            f"📊 Estado del día:\n"
+            f"✅ Conductores terminaron: {verificacion['conductores_terminaron']}\n"
+            f"🚛 Conductores disponibles: {verificacion.get('conductores_disponibles', 0)}\n"
             f"⏳ Viajes pendientes: {verificacion['viajes_pendientes']}\n"
-            f"🚛 Conductores que terminaron: {verificacion['conductores_terminaron']}\n"
+            f"🏁 Viajes completados: {verificacion['viajes_completados']}\n"
         )
         
         if verificacion['advertencia']:
-            texto += f"\n⚠️ _{verificacion['advertencia']}_\n"
+            texto += f"\n⚠️ {verificacion['advertencia']}\n"
         
         texto += "\n¿Qué quieres hacer?"
         
@@ -123,7 +124,6 @@ class CierreDiaHandler:
         
         await update.message.reply_text(
             texto,
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
@@ -140,34 +140,34 @@ class CierreDiaHandler:
         
         analisis = self.cierre.analizar_excel_actual()
         
-        texto = "📊 *RESUMEN DETALLADO*\n\n"
+        texto = "📊 RESUMEN DETALLADO\n\n"
         
-        # Conductores que terminaron o disponibles
-        texto += f"✅ *Terminaron/Disponibles ({len(analisis['conductores_terminaron'])}):**\n"
+        # Conductores que terminaron
+        texto += f"✅ Terminaron viaje ({len(analisis['conductores_terminaron'])}):\n"
         for c in analisis['conductores_terminaron'][:5]:
             texto += f"  • {c.nombre} → {c.ubicacion or 'Sin ubicación'}\n"
         if len(analisis['conductores_terminaron']) > 5:
-            texto += f"  _... y {len(analisis['conductores_terminaron']) - 5} más_\n"
+            texto += f"  ... y {len(analisis['conductores_terminaron']) - 5} más\n"
         
-        # Conductores con viaje pendiente
-        if analisis.get('conductores_con_pendiente'):
-            texto += f"\n🚛 *Con viaje en curso ({len(analisis['conductores_con_pendiente'])}):**\n"
-            for c in analisis['conductores_con_pendiente'][:5]:
-                texto += f"  • {c.nombre}\n"
-            if len(analisis['conductores_con_pendiente']) > 5:
-                texto += f"  _... y {len(analisis['conductores_con_pendiente']) - 5} más_\n"
+        # Conductores disponibles (sin viaje)
+        if analisis.get('conductores_disponibles'):
+            texto += f"\n🚛 Disponibles ({len(analisis['conductores_disponibles'])}):\n"
+            for c in analisis['conductores_disponibles'][:5]:
+                texto += f"  • {c.nombre} ({c.ubicacion or '?'})\n"
+            if len(analisis['conductores_disponibles']) > 5:
+                texto += f"  ... y {len(analisis['conductores_disponibles']) - 5} más\n"
         
         # Viajes pendientes
-        texto += f"\n⏳ *Viajes pendientes ({len(analisis['viajes_pendientes'])}):**\n"
+        texto += f"\n⏳ Viajes pendientes ({len(analisis['viajes_pendientes'])}):\n"
         for v in analisis['viajes_pendientes'][:5]:
             cliente = v.datos.get('cliente', 'N/A')
             carga = v.datos.get('lugar_carga', '?')
             descarga = v.datos.get('lugar_descarga', '?')
             texto += f"  • {cliente}: {carga} → {descarga}\n"
         if len(analisis['viajes_pendientes']) > 5:
-            texto += f"  _... y {len(analisis['viajes_pendientes']) - 5} más_\n"
+            texto += f"  ... y {len(analisis['viajes_pendientes']) - 5} más\n"
         
-        texto += f"\n🏁 *Viajes completados: {len(analisis['viajes_completados'])}*\n"
+        texto += f"\n🏁 Viajes completados: {len(analisis['viajes_completados'])}\n"
         
         keyboard = [
             [InlineKeyboardButton("🔄 Cerrar día actual", callback_data="cierre_ejecutar")],
@@ -177,7 +177,6 @@ class CierreDiaHandler:
         
         await query.edit_message_text(
             texto,
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
@@ -196,15 +195,15 @@ class CierreDiaHandler:
         nombre_nuevo = self.cierre.generar_nombre_excel()
         
         texto = (
-            f"⚠️ *CONFIRMAR CIERRE DE DÍA*\n\n"
-            f"Se creará: `{nombre_nuevo}`\n\n"
+            f"⚠️ CONFIRMAR CIERRE DE DÍA\n\n"
+            f"Se creará: {nombre_nuevo}\n\n"
             f"Se exportarán:\n"
             f"• {verificacion['conductores_terminaron']} conductores (ubicación actualizada)\n"
             f"• {verificacion['viajes_pendientes']} viajes pendientes\n\n"
         )
         
         if verificacion['advertencia']:
-            texto += f"⚠️ *ADVERTENCIA:* {verificacion['advertencia']}\n\n"
+            texto += f"⚠️ ADVERTENCIA: {verificacion['advertencia']}\n\n"
         
         texto += "¿Confirmar cierre?"
         
@@ -216,7 +215,6 @@ class CierreDiaHandler:
         
         await query.edit_message_text(
             texto,
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
@@ -232,9 +230,8 @@ class CierreDiaHandler:
         await query.answer()
         
         await query.edit_message_text(
-            "🔄 *Ejecutando cierre de día...*\n\n"
-            "⏳ Analizando Excel...",
-            parse_mode="Markdown"
+            "🔄 Ejecutando cierre de día...\n\n"
+            "⏳ Analizando Excel..."
         )
         
         # Ejecutar cierre
@@ -242,10 +239,10 @@ class CierreDiaHandler:
         
         if resultado['exito']:
             texto = (
-                f"✅ *CIERRE COMPLETADO*\n\n"
-                f"📁 Excel anterior: `{resultado['excel_anterior']}`\n"
-                f"📁 Excel nuevo: `{resultado['excel_nuevo']}`\n\n"
-                f"📊 *Exportados:*\n"
+                f"✅ CIERRE COMPLETADO\n\n"
+                f"📁 Excel anterior: {resultado['excel_anterior']}\n"
+                f"📁 Excel nuevo: {resultado['excel_nuevo']}\n\n"
+                f"📊 Exportados:\n"
                 f"• {resultado['conductores_exportados']} conductores\n"
                 f"• {resultado['viajes_pendientes']} viajes pendientes\n"
                 f"• {resultado['viajes_completados']} viajes archivados\n\n"
@@ -254,13 +251,13 @@ class CierreDiaHandler:
             )
         else:
             texto = (
-                f"❌ *ERROR EN CIERRE*\n\n"
+                f"❌ ERROR EN CIERRE\n\n"
                 f"Errores:\n"
             )
             for error in resultado['errores']:
                 texto += f"• {error}\n"
         
-        await query.edit_message_text(texto, parse_mode="Markdown")
+        await query.edit_message_text(texto)
         
         await query.message.reply_text(
             "¿Qué más necesitas?",
@@ -281,13 +278,13 @@ class CierreDiaHandler:
         excels = self.cierre.listar_excels_historicos(limite=7)
         
         if not excels:
-            texto = "📂 *HISTÓRICO*\n\nNo hay Excels históricos disponibles."
+            texto = "📂 HISTÓRICO\n\nNo hay Excels históricos disponibles."
             keyboard = [
                 [InlineKeyboardButton("⬅️ Volver", callback_data="cierre_volver")],
                 [InlineKeyboardButton("❌ Cancelar", callback_data="cierre_cancelar")]
             ]
         else:
-            texto = "📂 *HISTÓRICO DE DÍAS*\n\nSelecciona un día para ver detalles:\n\n"
+            texto = "📂 HISTÓRICO DE DÍAS\n\nSelecciona un día para ver detalles:\n\n"
             
             keyboard = []
             for excel in excels:
@@ -305,7 +302,6 @@ class CierreDiaHandler:
         
         await query.edit_message_text(
             texto,
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
@@ -334,7 +330,7 @@ class CierreDiaHandler:
                 wb.close()
                 
                 texto = (
-                    f"📄 *{nombre_excel}*\n\n"
+                    f"📄 {nombre_excel}\n\n"
                     f"📅 Fecha: {excel_info['fecha_modificacion'].strftime('%d/%m/%Y %H:%M')}\n"
                     f"📏 Tamaño: {excel_info['tamaño'] / 1024:.1f} KB\n"
                     f"📊 Filas de datos: {total_filas}\n"
@@ -349,7 +345,6 @@ class CierreDiaHandler:
         
         await query.edit_message_text(
             texto,
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
@@ -368,16 +363,17 @@ class CierreDiaHandler:
         excel_activo = self.cierre.obtener_excel_activo()
         
         texto = (
-            f"📅 *CIERRE DE DÍA*\n\n"
-            f"📁 Excel activo: `{excel_activo}`\n\n"
-            f"📊 *Estado del día:*\n"
-            f"✅ Viajes completados: {verificacion['viajes_completados']}\n"
+            f"📅 CIERRE DE DÍA\n\n"
+            f"📁 Excel activo: {excel_activo}\n\n"
+            f"📊 Estado del día:\n"
+            f"✅ Conductores terminaron: {verificacion['conductores_terminaron']}\n"
+            f"🚛 Conductores disponibles: {verificacion.get('conductores_disponibles', 0)}\n"
             f"⏳ Viajes pendientes: {verificacion['viajes_pendientes']}\n"
-            f"🚛 Conductores que terminaron: {verificacion['conductores_terminaron']}\n"
+            f"🏁 Viajes completados: {verificacion['viajes_completados']}\n"
         )
         
         if verificacion['advertencia']:
-            texto += f"\n⚠️ _{verificacion['advertencia']}_\n"
+            texto += f"\n⚠️ {verificacion['advertencia']}\n"
         
         texto += "\n¿Qué quieres hacer?"
         
@@ -390,7 +386,6 @@ class CierreDiaHandler:
         
         await query.edit_message_text(
             texto,
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         

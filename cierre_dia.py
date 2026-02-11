@@ -1,53 +1,32 @@
 """
 CIERRE DE DÍA v2.0
 ===================
-Gestiona el cierre diario y creación del Excel del día siguiente.
+Gestiona el cierre diario creando un nuevo Excel para el día siguiente.
 
-ESTRUCTURA DEL EXCEL:
-- Fila 1: Secciones (ZONA NORTE, FECHA, etc.)
+IMPORTANTE: 
+- NO modifica el Excel original (PRUEBO.xlsx)
+- CREA un nuevo archivo RUTAS_DD-MM-YYYY.xlsx
+
+Estructura del Excel:
+- Fila 1: Cabeceras de sección (ZONA NORTE, FECHA)
 - Fila 2: Cabeceras de columnas
 - Fila 3+: Datos
 
-COLUMNAS CONDUCTOR (1-8):
-- Col 1: Número (24/45)
-- Col 2: UBICACIÓN
-- Col 3: H.LL (hora llegada)
-- Col 4: H.SA (hora salida)
-- Col 5: TRANSPORTISTA (nombre)
-- Col 6: ABSENTISMO
-- Col 7: TRACTORA
-- Col 8: REMOLQUE
+Columnas:
+- 1-8: Datos conductor (Zona, Ubicación, H.LL, H.SA, Transportista, Absentismo, Tractora, Remolque)
+- 9-28: Datos viaje (Cliente, Pedido, Ref, Intercambio, Palés, Carga, Horas, Descarga, Horas, etc.)
 
-COLUMNAS VIAJE (9-28):
-- Col 9: CLIENTE
-- Col 10: Nº PEDIDO
-- Col 11: REF. CLIENTE
-- Col 12: INTERCAMBIO
-- Col 13: Nº PALÉS
-- Col 14: LUGAR DE CARGA
-- Col 15: HORA LLEGADA (carga)
-- Col 16: HORA SALIDA (carga)
-- Col 17: LUGAR DE ENTREGA (descarga)
-- Col 18: HORA LLEGADA (descarga)
-- Col 19: HORA SALIDA (descarga) ← Determina si viaje completado
-- Col 20: MERCANCIA
-- Col 21: CARGADOR
-- Col 22: TRANSPORTISTA (asignado)
-- Col 23: PRECIO COBRO
-- Col 24: KM
-- Col 25-28: Otros
-
-Proceso:
+Proceso de cierre:
 1. Analiza Excel actual
-2. Crea NUEVO Excel (RUTAS_DD-MM-YYYY.xlsx)
-3. Exporta conductores que terminaron (ubicación = última descarga, H.LL/H.SA = VACIO)
-4. Exporta viajes pendientes (sin hora salida descarga)
-5. Cambia el bot al nuevo Excel (NO sobrescribe el anterior)
+2. Identifica conductores que terminaron (hora salida descarga registrada)
+3. Identifica viajes pendientes (sin hora salida descarga)
+4. CREA nuevo Excel RUTAS_DD-MM-YYYY.xlsx (no modifica original)
+5. Exporta conductores con ubicación actualizada
+6. Exporta viajes pendientes
 """
 
 import os
 import sys
-import sqlite3
 import logging
 import shutil
 from datetime import datetime, timedelta
@@ -56,91 +35,97 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
 from openpyxl import load_workbook, Workbook
-from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# CONFIGURACIÓN DE ESTRUCTURA
+# CONFIGURACIÓN DE COLUMNAS (estructura real del Excel)
 # ============================================================
-
-FILA_SECCION = 1      # Fila con ZONA NORTE, FECHA, etc.
-FILA_CABECERAS = 2    # Fila con nombres de columnas
-FILA_INICIO_DATOS = 3 # Primera fila de datos
 
 # Columnas de conductores (parte izquierda)
 COL_CONDUCTOR = {
-    'numero': 1,          # A - 24/45
+    'zona': 1,            # A - 24/45
     'ubicacion': 2,       # B - UBICACIÓN
     'hora_llegada': 3,    # C - H.LL
     'hora_salida': 4,     # D - H.SA
-    'nombre': 5,          # E - TRANSPORTISTA (nombre conductor)
+    'nombre': 5,          # E - TRANSPORTISTA (nombre del conductor)
     'absentismo': 6,      # F - ABSENTISMO
     'tractora': 7,        # G - TRACTORA
     'remolque': 8,        # H - REMOLQUE
 }
 
-# Columnas de viajes
+# Columnas de viajes (parte derecha)
 COL_VIAJE = {
-    'cliente': 9,              # I
-    'num_pedido': 10,          # J
-    'ref_cliente': 11,         # K
-    'intercambio': 12,         # L
-    'num_pales': 13,           # M
-    'lugar_carga': 14,         # N
-    'hora_llegada_carga': 15,  # O
-    'hora_salida_carga': 16,   # P
+    'cliente': 9,              # I - CLIENTE
+    'num_pedido': 10,          # J - Nº PEDIDO
+    'ref_cliente': 11,         # K - REF. CLIENTE
+    'intercambio': 12,         # L - INTERCAMBIO
+    'num_pales': 13,           # M - Nº PALÉS
+    'lugar_carga': 14,         # N - LUGAR DE CARGA
+    'hora_llegada_carga': 15,  # O - HORA LLEGADA (carga)
+    'hora_salida_carga': 16,   # P - HORA SALIDA (carga)
     'lugar_descarga': 17,      # Q - LUGAR DE ENTREGA
-    'hora_llegada_descarga': 18,  # R
-    'hora_salida_descarga': 19,   # S ← Determina si completado
-    'mercancia': 20,           # T
-    'cargador': 21,            # U
-    'transportista': 22,       # V - TRANSPORTISTA asignado
-    'precio': 23,              # W
-    'km': 24,                  # X
-    'eur_km': 25,              # Y
-    'pago_cargador': 26,       # Z
-    'num_exp': 27,             # AA
-    'observaciones': 28,       # AB
+    'hora_llegada_descarga': 18,  # R - HORA LLEGADA (descarga)
+    'hora_salida_descarga': 19,   # S - HORA SALIDA (descarga) ← CLAVE
+    'mercancia': 20,           # T - MERCANCIA
+    'cargador': 21,            # U - CARGADOR
+    'transportista': 22,       # V - TRANSPORTISTA (del viaje)
+    'precio_cobro': 23,        # W - PRECIO COBRO
+    'km': 24,                  # X - KM
+    'eur_km': 25,              # Y - EUR/KM
+    'pago_cargador': 26,       # Z - PAGO CARGADOR
+    'num_exp': 27,             # AA - Nº EXP.
+    'observaciones': 28,       # AB - OBSERVACIONES
 }
 
-# Total de columnas a copiar
-TOTAL_COLUMNAS = 45
+# Filas especiales
+FILA_SECCIONES = 1      # Fila con "ZONA NORTE", "FECHA", etc.
+FILA_CABECERAS = 2      # Fila con nombres de columnas
+FILA_INICIO_DATOS = 3   # Primera fila de datos
 
 
 @dataclass
-class ConductorExportar:
-    """Datos de un conductor para exportar"""
+class ConductorParaExportar:
+    """Datos de un conductor para exportar al nuevo día"""
     fila_original: int
-    numero: str
-    nombre: str
+    zona: str
     ubicacion: str
+    nombre: str
+    absentismo: str
     tractora: str
     remolque: str
-    absentismo: str
 
 
 @dataclass
 class ViajePendiente:
-    """Datos de un viaje pendiente"""
+    """Datos de un viaje pendiente para exportar al nuevo día"""
     fila_original: int
-    datos_conductor: Dict
-    datos_viaje: Dict
+    datos: Dict  # Todos los datos del viaje
 
 
 class CierreDia:
-    """Gestiona el cierre de día y creación del Excel nuevo."""
+    """
+    Gestiona el cierre de día y creación del Excel nuevo.
+    
+    IMPORTANTE: No modifica el Excel original, solo crea uno nuevo.
+    """
     
     def __init__(self, excel_path: str, db_path: str, 
                  directorio_excels: str = None,
-                 subir_drive_func=None,
-                 descargar_drive_func=None):
+                 subir_drive_func=None):
+        """
+        Args:
+            excel_path: Ruta al Excel actual (PRUEBO.xlsx)
+            db_path: Ruta a la base de datos
+            directorio_excels: Directorio donde guardar los Excels nuevos
+            subir_drive_func: Función para subir a Drive
+        """
         self.excel_path = excel_path
         self.db_path = db_path
         self.directorio = directorio_excels or str(Path(excel_path).parent)
         self.subir_drive = subir_drive_func
-        self.descargar_drive = descargar_drive_func
         
         # Archivo que guarda el Excel activo
         self.archivo_activo_path = os.path.join(self.directorio, "excel_activo.txt")
@@ -148,27 +133,30 @@ class CierreDia:
         logger.info("[CIERRE] Módulo de cierre de día v2.0 inicializado")
     
     # ============================================================
-    # GESTIÓN DEL ARCHIVO ACTIVO
+    # UTILIDADES
     # ============================================================
     
     def obtener_excel_activo(self) -> str:
         """Obtiene el nombre del Excel activo actual"""
-        if os.path.exists(self.archivo_activo_path):
-            with open(self.archivo_activo_path, 'r') as f:
-                return f.read().strip()
         return os.path.basename(self.excel_path)
-    
-    def establecer_excel_activo(self, nombre_excel: str):
-        """Establece el Excel activo"""
-        with open(self.archivo_activo_path, 'w') as f:
-            f.write(nombre_excel)
-        logger.info(f"[CIERRE] Excel activo establecido: {nombre_excel}")
     
     def generar_nombre_excel(self, fecha: datetime = None) -> str:
         """Genera el nombre del Excel para una fecha"""
         if fecha is None:
             fecha = datetime.now()
         return f"RUTAS_{fecha.strftime('%d-%m-%Y')}.xlsx"
+    
+    def _valor_celda(self, ws, fila: int, columna: int) -> str:
+        """Obtiene el valor de una celda como string limpio"""
+        valor = ws.cell(row=fila, column=columna).value
+        if valor is None:
+            return ''
+        return str(valor).strip()
+    
+    def _tiene_hora_salida_descarga(self, ws, fila: int) -> bool:
+        """Verifica si la fila tiene hora de salida de descarga"""
+        valor = self._valor_celda(ws, fila, COL_VIAJE['hora_salida_descarga'])
+        return bool(valor and valor not in ['', 'None', 'VACIO'])
     
     # ============================================================
     # ANÁLISIS DEL EXCEL ACTUAL
@@ -177,86 +165,91 @@ class CierreDia:
     def analizar_excel_actual(self) -> Dict:
         """
         Analiza el Excel actual para identificar:
-        - Conductores que terminaron (hora salida descarga registrada)
+        - Conductores que terminaron (tienen hora salida descarga)
+        - Conductores disponibles (sin viaje asignado)
         - Viajes pendientes (sin hora salida descarga)
+        
+        Returns:
+            Dict con listas de conductores y viajes
         """
         try:
             wb = load_workbook(self.excel_path)
             ws = wb.active
             
-            conductores_terminaron = []
-            conductores_con_pendiente = []
+            conductores_terminaron = []      # Terminaron viaje
+            conductores_disponibles = []     # Sin viaje asignado
             viajes_pendientes = []
             viajes_completados = []
-            conductores_vistos = set()
+            
+            conductores_vistos = set()  # Para evitar duplicados
             
             # Recorrer filas de datos (desde fila 3)
             for fila in range(FILA_INICIO_DATOS, ws.max_row + 1):
-                # Obtener datos clave
-                nombre = ws.cell(row=fila, column=COL_CONDUCTOR['nombre']).value
-                cliente = ws.cell(row=fila, column=COL_VIAJE['cliente']).value
-                hora_salida_descarga = ws.cell(row=fila, column=COL_VIAJE['hora_salida_descarga']).value
+                nombre_conductor = self._valor_celda(ws, fila, COL_CONDUCTOR['nombre'])
+                cliente = self._valor_celda(ws, fila, COL_VIAJE['cliente'])
                 
                 # Saltar filas vacías
-                if not nombre and not cliente:
+                if not nombre_conductor and not cliente:
                     continue
                 
-                # Limpiar valores
-                nombre_str = str(nombre).strip() if nombre else ''
-                hora_salida_str = str(hora_salida_descarga).strip() if hora_salida_descarga else ''
+                # Saltar filas que son cabeceras repetidas (secciones intermedias)
+                if nombre_conductor.upper() in ['TRANSPORTISTA', 'NOMBRE', 'CONDUCTOR']:
+                    continue
+                if cliente.upper() in ['CLIENTE', 'CLIENTES']:
+                    continue
                 
-                # Ignorar si hora_salida es "None" o vacío
-                viaje_completado = bool(hora_salida_str and hora_salida_str.lower() != 'none')
+                # Verificar si tiene hora salida descarga
+                tiene_hora_salida = self._tiene_hora_salida_descarga(ws, fila)
                 
                 # Procesar conductor (si hay nombre y no lo hemos visto)
-                if nombre_str and nombre_str.upper() not in conductores_vistos:
-                    conductores_vistos.add(nombre_str.upper())
+                if nombre_conductor and nombre_conductor.upper() not in conductores_vistos:
+                    conductores_vistos.add(nombre_conductor.upper())
                     
-                    conductor = ConductorExportar(
+                    ubicacion = self._valor_celda(ws, fila, COL_CONDUCTOR['ubicacion'])
+                    
+                    # Si terminó viaje, actualizar ubicación a lugar de descarga
+                    if tiene_hora_salida:
+                        lugar_descarga = self._valor_celda(ws, fila, COL_VIAJE['lugar_descarga'])
+                        if lugar_descarga:
+                            ubicacion = lugar_descarga
+                    
+                    conductor = ConductorParaExportar(
                         fila_original=fila,
-                        numero=str(ws.cell(row=fila, column=COL_CONDUCTOR['numero']).value or '').strip(),
-                        nombre=nombre_str,
-                        ubicacion=str(ws.cell(row=fila, column=COL_CONDUCTOR['ubicacion']).value or '').strip(),
-                        tractora=str(ws.cell(row=fila, column=COL_CONDUCTOR['tractora']).value or '').strip(),
-                        remolque=str(ws.cell(row=fila, column=COL_CONDUCTOR['remolque']).value or '').strip(),
-                        absentismo=str(ws.cell(row=fila, column=COL_CONDUCTOR['absentismo']).value or '').strip(),
+                        zona=self._valor_celda(ws, fila, COL_CONDUCTOR['zona']),
+                        ubicacion=ubicacion,
+                        nombre=nombre_conductor,
+                        absentismo=self._valor_celda(ws, fila, COL_CONDUCTOR['absentismo']),
+                        tractora=self._valor_celda(ws, fila, COL_CONDUCTOR['tractora']),
+                        remolque=self._valor_celda(ws, fila, COL_CONDUCTOR['remolque']),
                     )
                     
-                    # Clasificar conductor
-                    if viaje_completado:
-                        # Actualizar ubicación a lugar de descarga
-                        lugar_descarga = ws.cell(row=fila, column=COL_VIAJE['lugar_descarga']).value
-                        if lugar_descarga:
-                            conductor.ubicacion = str(lugar_descarga).strip()
+                    if tiene_hora_salida:
                         conductores_terminaron.append(conductor)
                     elif not cliente:
-                        # Sin viaje asignado = disponible
-                        conductores_terminaron.append(conductor)
-                    else:
-                        # Tiene viaje pendiente
-                        conductores_con_pendiente.append(conductor)
+                        # Conductor sin viaje asignado
+                        conductores_disponibles.append(conductor)
+                    # Si tiene viaje pendiente, se procesará con el viaje
                 
                 # Procesar viaje (si hay cliente)
                 if cliente:
-                    # Obtener datos del conductor de esta fila
-                    datos_conductor = {}
-                    for campo, col in COL_CONDUCTOR.items():
-                        val = ws.cell(row=fila, column=col).value
-                        datos_conductor[campo] = str(val).strip() if val else ''
+                    viaje_datos = {}
+                    for campo, columna in COL_VIAJE.items():
+                        viaje_datos[campo] = self._valor_celda(ws, fila, columna)
                     
-                    # Obtener datos del viaje
-                    datos_viaje = {}
-                    for campo, col in COL_VIAJE.items():
-                        val = ws.cell(row=fila, column=col).value
-                        datos_viaje[campo] = str(val).strip() if val else ''
+                    # Añadir datos del conductor asociado
+                    viaje_datos['conductor_nombre'] = nombre_conductor
+                    viaje_datos['conductor_zona'] = self._valor_celda(ws, fila, COL_CONDUCTOR['zona'])
+                    viaje_datos['conductor_ubicacion'] = self._valor_celda(ws, fila, COL_CONDUCTOR['ubicacion'])
+                    viaje_datos['conductor_absentismo'] = self._valor_celda(ws, fila, COL_CONDUCTOR['absentismo'])
+                    viaje_datos['conductor_tractora'] = self._valor_celda(ws, fila, COL_CONDUCTOR['tractora'])
+                    viaje_datos['conductor_remolque'] = self._valor_celda(ws, fila, COL_CONDUCTOR['remolque'])
                     
                     viaje = ViajePendiente(
                         fila_original=fila,
-                        datos_conductor=datos_conductor,
-                        datos_viaje=datos_viaje
+                        datos=viaje_datos
                     )
                     
-                    if viaje_completado:
+                    if tiene_hora_salida:
                         viajes_completados.append(viaje)
                     else:
                         viajes_pendientes.append(viaje)
@@ -265,16 +258,16 @@ class CierreDia:
             
             resultado = {
                 'conductores_terminaron': conductores_terminaron,
-                'conductores_con_pendiente': conductores_con_pendiente,
+                'conductores_disponibles': conductores_disponibles,
                 'viajes_pendientes': viajes_pendientes,
                 'viajes_completados': viajes_completados,
-                'total_conductores': len(conductores_vistos)
+                'total_conductores': len(conductores_vistos),
             }
             
             logger.info(f"[CIERRE] Análisis: {len(conductores_terminaron)} terminaron, "
-                       f"{len(conductores_con_pendiente)} con pendiente, "
+                       f"{len(conductores_disponibles)} disponibles, "
                        f"{len(viajes_pendientes)} viajes pendientes, "
-                       f"{len(viajes_completados)} completados")
+                       f"{len(viajes_completados)} viajes completados")
             
             return resultado
             
@@ -284,7 +277,7 @@ class CierreDia:
             traceback.print_exc()
             return {
                 'conductores_terminaron': [],
-                'conductores_con_pendiente': [],
+                'conductores_disponibles': [],
                 'viajes_pendientes': [],
                 'viajes_completados': [],
                 'total_conductores': 0,
@@ -292,13 +285,19 @@ class CierreDia:
             }
     
     # ============================================================
-    # CREAR NUEVO EXCEL
+    # CREAR NUEVO EXCEL (SIN MODIFICAR EL ORIGINAL)
     # ============================================================
     
     def crear_excel_nuevo(self, fecha: datetime = None) -> Tuple[str, str]:
         """
-        Crea el Excel del nuevo día.
-        NO modifica el Excel original.
+        CREA un nuevo Excel para el día siguiente.
+        NO modifica el Excel original (PRUEBO.xlsx).
+        
+        Args:
+            fecha: Fecha para el nuevo Excel (default: hoy)
+        
+        Returns:
+            Tuple (nombre_archivo, ruta_completa)
         """
         if fecha is None:
             fecha = datetime.now()
@@ -307,9 +306,15 @@ class CierreDia:
         ruta_nueva = os.path.join(self.directorio, nombre_nuevo)
         
         try:
-            # Cargar Excel actual (solo lectura)
+            # Cargar Excel actual como plantilla (solo lectura)
             wb_original = load_workbook(self.excel_path)
             ws_original = wb_original.active
+            
+            # Analizar datos actuales
+            analisis = self.analizar_excel_actual()
+            conductores_terminaron = analisis['conductores_terminaron']
+            conductores_disponibles = analisis['conductores_disponibles']
+            viajes_pendientes = analisis['viajes_pendientes']
             
             # Crear nuevo workbook
             wb_nuevo = Workbook()
@@ -317,49 +322,47 @@ class CierreDia:
             ws_nuevo.title = "Rutas"
             
             # Copiar fila 1 (secciones: ZONA NORTE, FECHA, etc.)
-            for col in range(1, TOTAL_COLUMNAS + 1):
-                celda_origen = ws_original.cell(row=FILA_SECCION, column=col)
-                celda_destino = ws_nuevo.cell(row=FILA_SECCION, column=col)
-                celda_destino.value = celda_origen.value
-                # Copiar formato básico
-                if celda_origen.font:
-                    celda_destino.font = Font(
-                        bold=celda_origen.font.bold,
-                        size=celda_origen.font.size
+            for col in range(1, ws_original.max_column + 1):
+                valor = ws_original.cell(row=FILA_SECCIONES, column=col).value
+                ws_nuevo.cell(row=FILA_SECCIONES, column=col, value=valor)
+                # Copiar formato
+                celda_orig = ws_original.cell(row=FILA_SECCIONES, column=col)
+                celda_nueva = ws_nuevo.cell(row=FILA_SECCIONES, column=col)
+                if celda_orig.font:
+                    celda_nueva.font = Font(
+                        bold=celda_orig.font.bold,
+                        size=celda_orig.font.size
                     )
             
             # Copiar fila 2 (cabeceras)
-            for col in range(1, TOTAL_COLUMNAS + 1):
-                celda_origen = ws_original.cell(row=FILA_CABECERAS, column=col)
-                celda_destino = ws_nuevo.cell(row=FILA_CABECERAS, column=col)
-                celda_destino.value = celda_origen.value
-                if celda_origen.font:
-                    celda_destino.font = Font(
-                        bold=celda_origen.font.bold,
-                        size=celda_origen.font.size
+            for col in range(1, ws_original.max_column + 1):
+                valor = ws_original.cell(row=FILA_CABECERAS, column=col).value
+                ws_nuevo.cell(row=FILA_CABECERAS, column=col, value=valor)
+                # Copiar formato
+                celda_orig = ws_original.cell(row=FILA_CABECERAS, column=col)
+                celda_nueva = ws_nuevo.cell(row=FILA_CABECERAS, column=col)
+                if celda_orig.font:
+                    celda_nueva.font = Font(
+                        bold=celda_orig.font.bold,
+                        size=celda_orig.font.size
                     )
             
             # Copiar ancho de columnas
-            for col in range(1, TOTAL_COLUMNAS + 1):
+            for col in range(1, ws_original.max_column + 1):
                 letra = get_column_letter(col)
                 if ws_original.column_dimensions[letra].width:
                     ws_nuevo.column_dimensions[letra].width = ws_original.column_dimensions[letra].width
             
-            # Analizar datos
-            analisis = self.analizar_excel_actual()
-            conductores_terminaron = analisis['conductores_terminaron']
-            viajes_pendientes = analisis['viajes_pendientes']
-            
             fila_actual = FILA_INICIO_DATOS
             conductores_escritos = set()
             
-            # 1. Escribir conductores que terminaron (vacíos, ubicación actualizada)
+            # 1. Escribir conductores que TERMINARON (ubicación actualizada, H.LL/H.SA vacías)
             for conductor in conductores_terminaron:
                 if conductor.nombre.upper() in conductores_escritos:
                     continue
                 conductores_escritos.add(conductor.nombre.upper())
                 
-                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['numero'], value=conductor.numero)
+                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['zona'], value=conductor.zona)
                 ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['ubicacion'], value=conductor.ubicacion)
                 ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['hora_llegada'], value="VACIO")
                 ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['hora_salida'], value="VACIO")
@@ -367,42 +370,61 @@ class CierreDia:
                 ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['absentismo'], value=conductor.absentismo)
                 ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['tractora'], value=conductor.tractora)
                 ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['remolque'], value=conductor.remolque)
-                
                 fila_actual += 1
             
-            # 2. Escribir viajes pendientes CON sus conductores
+            # 2. Escribir conductores DISPONIBLES (sin viaje, H.LL/H.SA vacías)
+            for conductor in conductores_disponibles:
+                if conductor.nombre.upper() in conductores_escritos:
+                    continue
+                conductores_escritos.add(conductor.nombre.upper())
+                
+                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['zona'], value=conductor.zona)
+                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['ubicacion'], value=conductor.ubicacion)
+                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['hora_llegada'], value="VACIO")
+                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['hora_salida'], value="VACIO")
+                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['nombre'], value=conductor.nombre)
+                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['absentismo'], value=conductor.absentismo)
+                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['tractora'], value=conductor.tractora)
+                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['remolque'], value=conductor.remolque)
+                fila_actual += 1
+            
+            # 3. Escribir VIAJES PENDIENTES con sus conductores
             for viaje in viajes_pendientes:
-                transportista = viaje.datos_viaje.get('transportista', '').strip()
+                nombre_conductor = viaje.datos.get('conductor_nombre', '')
                 
-                # Escribir datos del conductor
-                conductor_nombre = viaje.datos_conductor.get('nombre', '').strip()
-                if conductor_nombre and conductor_nombre.upper() not in conductores_escritos:
-                    conductores_escritos.add(conductor_nombre.upper())
+                # Escribir datos del conductor (si tiene y no está duplicado)
+                if nombre_conductor and nombre_conductor.upper() not in conductores_escritos:
+                    conductores_escritos.add(nombre_conductor.upper())
+                    ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['zona'], 
+                                 value=viaje.datos.get('conductor_zona', ''))
+                    ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['ubicacion'], 
+                                 value=viaje.datos.get('conductor_ubicacion', ''))
+                    ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['hora_llegada'], value='')
+                    ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['hora_salida'], value='')
+                    ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['nombre'], value=nombre_conductor)
+                    ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['absentismo'], 
+                                 value=viaje.datos.get('conductor_absentismo', ''))
+                    ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['tractora'], 
+                                 value=viaje.datos.get('conductor_tractora', ''))
+                    ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['remolque'], 
+                                 value=viaje.datos.get('conductor_remolque', ''))
+                elif nombre_conductor:
+                    # Conductor ya escrito, solo poner el nombre
+                    ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['nombre'], value=nombre_conductor)
                 
-                # Columnas del conductor
-                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['numero'], 
-                             value=viaje.datos_conductor.get('numero', ''))
-                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['ubicacion'], 
-                             value=viaje.datos_conductor.get('ubicacion', ''))
-                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['hora_llegada'], value='')
-                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['hora_salida'], value='')
-                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['nombre'], 
-                             value=viaje.datos_conductor.get('nombre', ''))
-                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['absentismo'], 
-                             value=viaje.datos_conductor.get('absentismo', ''))
-                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['tractora'], 
-                             value=viaje.datos_conductor.get('tractora', ''))
-                ws_nuevo.cell(row=fila_actual, column=COL_CONDUCTOR['remolque'], 
-                             value=viaje.datos_conductor.get('remolque', ''))
-                
-                # Columnas del viaje (sin horas de registro)
-                for campo, col in COL_VIAJE.items():
-                    valor = viaje.datos_viaje.get(campo, '')
-                    # Limpiar horas de registro
+                # Escribir datos del viaje (sin horas de registro)
+                for campo, columna in COL_VIAJE.items():
+                    if campo.startswith('conductor_'):
+                        continue  # Saltar campos de conductor
+                    
+                    valor = viaje.datos.get(campo, '')
+                    
+                    # Limpiar horas de registro para el nuevo día
                     if campo in ['hora_llegada_carga', 'hora_salida_carga', 
                                 'hora_llegada_descarga', 'hora_salida_descarga']:
                         valor = ''
-                    ws_nuevo.cell(row=fila_actual, column=col, value=valor)
+                    
+                    ws_nuevo.cell(row=fila_actual, column=columna, value=valor)
                 
                 fila_actual += 1
             
@@ -411,7 +433,8 @@ class CierreDia:
             wb_nuevo.close()
             wb_original.close()
             
-            logger.info(f"[CIERRE] ✅ Nuevo Excel creado: {nombre_nuevo}")
+            logger.info(f"[CIERRE] ✅ Nuevo Excel CREADO: {nombre_nuevo}")
+            logger.info(f"[CIERRE]    - Ruta: {ruta_nueva}")
             logger.info(f"[CIERRE]    - {len(conductores_escritos)} conductores")
             logger.info(f"[CIERRE]    - {len(viajes_pendientes)} viajes pendientes")
             
@@ -424,46 +447,29 @@ class CierreDia:
             raise
     
     # ============================================================
-    # SINCRONIZAR BD
-    # ============================================================
-    
-    def sincronizar_bd_nuevo_excel(self, ruta_excel: str) -> Dict:
-        """Sincroniza la BD con el nuevo Excel"""
-        try:
-            from separador_excel_empresa import SeparadorExcelEmpresa
-            from extractor_telefonos import sincronizar_telefonos
-            from generador_direcciones import sincronizar_direcciones
-            
-            separador = SeparadorExcelEmpresa(self.db_path)
-            resultado = separador.sincronizar_desde_archivo(ruta_excel, forzar=True)
-            
-            sincronizar_telefonos(ruta_excel, self.db_path)
-            sincronizar_direcciones(self.db_path)
-            
-            logger.info(f"[CIERRE] BD sincronizada: {resultado}")
-            return resultado
-            
-        except Exception as e:
-            logger.error(f"[CIERRE] Error sincronizando BD: {e}")
-            return {'exito': False, 'error': str(e)}
-    
-    # ============================================================
-    # EJECUTAR CIERRE
+    # EJECUTAR CIERRE COMPLETO
     # ============================================================
     
     def ejecutar_cierre(self, fecha_nuevo: datetime = None) -> Dict:
         """
-        Ejecuta el cierre de día.
-        CREA un nuevo Excel, NO modifica el anterior.
+        Ejecuta el cierre de día completo.
+        
+        IMPORTANTE: Solo CREA un nuevo Excel, NO modifica el original.
+        
+        Args:
+            fecha_nuevo: Fecha para el nuevo Excel (default: hoy)
+        
+        Returns:
+            Dict con resultado del cierre
         """
         resultado = {
             'exito': False,
-            'excel_anterior': os.path.basename(self.excel_path),
+            'excel_original': os.path.basename(self.excel_path),
             'excel_nuevo': None,
+            'ruta_excel_nuevo': None,
             'conductores_exportados': 0,
             'viajes_pendientes': 0,
             'viajes_completados': 0,
-            'bd_sincronizada': False,
             'drive_subido': False,
             'errores': []
         }
@@ -471,9 +477,10 @@ class CierreDia:
         try:
             logger.info("[CIERRE] ═══════════════════════════════════════")
             logger.info("[CIERRE] INICIANDO CIERRE DE DÍA")
+            logger.info(f"[CIERRE] Excel original: {self.excel_path}")
             logger.info("[CIERRE] ═══════════════════════════════════════")
             
-            # Paso 1: Analizar
+            # Paso 1: Analizar Excel actual
             logger.info("[CIERRE] Paso 1: Analizando Excel actual...")
             analisis = self.analizar_excel_actual()
             
@@ -481,29 +488,21 @@ class CierreDia:
                 resultado['errores'].append(f"Error analizando: {analisis['error']}")
                 return resultado
             
-            resultado['conductores_exportados'] = len(analisis['conductores_terminaron']) + len(analisis['conductores_con_pendiente'])
+            total_conductores = len(analisis['conductores_terminaron']) + len(analisis['conductores_disponibles'])
+            resultado['conductores_exportados'] = total_conductores
             resultado['viajes_pendientes'] = len(analisis['viajes_pendientes'])
             resultado['viajes_completados'] = len(analisis['viajes_completados'])
             
-            # Paso 2: Crear nuevo Excel
+            # Paso 2: Crear nuevo Excel (SIN modificar el original)
             logger.info("[CIERRE] Paso 2: Creando nuevo Excel...")
             nombre_nuevo, ruta_nueva = self.crear_excel_nuevo(fecha_nuevo)
             resultado['excel_nuevo'] = nombre_nuevo
+            resultado['ruta_excel_nuevo'] = ruta_nueva
             
-            # Paso 3: Actualizar referencia al Excel activo
-            logger.info("[CIERRE] Paso 3: Actualizando referencia...")
-            self.establecer_excel_activo(nombre_nuevo)
-            
-            # Paso 4: Sincronizar BD con el nuevo Excel
-            logger.info("[CIERRE] Paso 4: Sincronizando BD...")
-            sync_resultado = self.sincronizar_bd_nuevo_excel(ruta_nueva)
-            resultado['bd_sincronizada'] = sync_resultado.get('exito', True) if 'error' not in sync_resultado else False
-            
-            # Paso 5: Subir nuevo Excel a Drive
+            # Paso 3: Subir a Drive (solo el nuevo Excel si se desea)
             if self.subir_drive:
-                logger.info("[CIERRE] Paso 5: Subiendo a Drive...")
+                logger.info("[CIERRE] Paso 3: Subiendo a Drive...")
                 try:
-                    # Subir el nuevo Excel
                     self.subir_drive()
                     resultado['drive_subido'] = True
                 except Exception as e:
@@ -513,10 +512,11 @@ class CierreDia:
             
             logger.info("[CIERRE] ═══════════════════════════════════════")
             logger.info("[CIERRE] ✅ CIERRE DE DÍA COMPLETADO")
-            logger.info(f"[CIERRE]    Excel anterior: {resultado['excel_anterior']} (sin modificar)")
-            logger.info(f"[CIERRE]    Excel nuevo: {nombre_nuevo}")
+            logger.info(f"[CIERRE]    Excel CREADO: {nombre_nuevo}")
+            logger.info(f"[CIERRE]    Excel original SIN MODIFICAR: {os.path.basename(self.excel_path)}")
             logger.info(f"[CIERRE]    Conductores: {resultado['conductores_exportados']}")
             logger.info(f"[CIERRE]    Viajes pendientes: {resultado['viajes_pendientes']}")
+            logger.info(f"[CIERRE]    Viajes completados (archivados): {resultado['viajes_completados']}")
             logger.info("[CIERRE] ═══════════════════════════════════════")
             
             return resultado
@@ -533,19 +533,28 @@ class CierreDia:
     # ============================================================
     
     def verificar_cierre_seguro(self) -> Dict:
-        """Verifica si es seguro hacer el cierre"""
+        """
+        Verifica si es seguro hacer el cierre.
+        
+        Returns:
+            Dict con info de seguridad
+        """
         analisis = self.analizar_excel_actual()
         
+        # Verificar si ya existe Excel del día
         nombre_hoy = self.generar_nombre_excel()
         ruta_hoy = os.path.join(self.directorio, nombre_hoy)
         excel_hoy_existe = os.path.exists(ruta_hoy)
+        
+        total_conductores = len(analisis.get('conductores_terminaron', [])) + \
+                           len(analisis.get('conductores_disponibles', []))
         
         return {
             'seguro': not excel_hoy_existe,
             'excel_hoy_existe': excel_hoy_existe,
             'nombre_excel_hoy': nombre_hoy,
             'conductores_terminaron': len(analisis.get('conductores_terminaron', [])),
-            'conductores_con_pendiente': len(analisis.get('conductores_con_pendiente', [])),
+            'conductores_disponibles': len(analisis.get('conductores_disponibles', [])),
             'viajes_pendientes': len(analisis.get('viajes_pendientes', [])),
             'viajes_completados': len(analisis.get('viajes_completados', [])),
             'advertencia': f"Ya existe {nombre_hoy}" if excel_hoy_existe else None
@@ -555,22 +564,21 @@ class CierreDia:
         """Lista los Excels históricos disponibles"""
         excels = []
         
-        try:
-            for archivo in os.listdir(self.directorio):
-                if archivo.startswith("RUTAS_") and archivo.endswith(".xlsx"):
-                    ruta = os.path.join(self.directorio, archivo)
-                    fecha_mod = datetime.fromtimestamp(os.path.getmtime(ruta))
-                    
-                    excels.append({
-                        'nombre': archivo,
-                        'ruta': ruta,
-                        'fecha_modificacion': fecha_mod,
-                        'tamaño': os.path.getsize(ruta)
-                    })
-        except Exception as e:
-            logger.error(f"[CIERRE] Error listando históricos: {e}")
+        for archivo in os.listdir(self.directorio):
+            if archivo.startswith("RUTAS_") and archivo.endswith(".xlsx"):
+                ruta = os.path.join(self.directorio, archivo)
+                fecha_mod = datetime.fromtimestamp(os.path.getmtime(ruta))
+                
+                excels.append({
+                    'nombre': archivo,
+                    'ruta': ruta,
+                    'fecha_modificacion': fecha_mod,
+                    'tamaño': os.path.getsize(ruta)
+                })
         
+        # Ordenar por fecha descendente
         excels.sort(key=lambda x: x['fecha_modificacion'], reverse=True)
+        
         return excels[:limite]
 
 
@@ -578,14 +586,14 @@ class CierreDia:
 # FUNCIÓN PARA INTEGRAR EN BOT
 # ============================================================
 
-def crear_cierre_dia(excel_path: str, db_path: str, 
-                     subir_drive_func=None, descargar_drive_func=None):
-    """Crea una instancia del módulo de cierre"""
+def crear_cierre_dia(excel_path: str, db_path: str, subir_drive_func=None):
+    """
+    Crea una instancia del módulo de cierre de día.
+    """
     return CierreDia(
         excel_path=excel_path,
         db_path=db_path,
-        subir_drive_func=subir_drive_func,
-        descargar_drive_func=descargar_drive_func
+        subir_drive_func=subir_drive_func
     )
 
 
@@ -594,7 +602,10 @@ def crear_cierre_dia(excel_path: str, db_path: str,
 # ============================================================
 
 if __name__ == "__main__":
-    import logging
+    """
+    Uso con cron:
+    0 8 * * * cd /root/bot-transporte/Botttttt && python3 cierre_dia.py >> /var/log/cierre_dia.log 2>&1
+    """
     from dotenv import load_dotenv
     
     logging.basicConfig(
@@ -606,38 +617,27 @@ if __name__ == "__main__":
     
     EXCEL_EMPRESA = os.getenv("EXCEL_EMPRESA", "PRUEBO.xlsx")
     DB_PATH = os.getenv("DB_PATH", "logistica.db")
-    DRIVE_ENABLED = os.getenv("DRIVE_ENABLED", "false").lower() == "true"
-    
-    subir_drive = None
-    if DRIVE_ENABLED:
-        try:
-            from sync_automatico import subir_excel_a_drive, inicializar_drive
-            if inicializar_drive():
-                subir_drive = subir_excel_a_drive
-        except Exception as e:
-            logger.warning(f"No se pudo configurar Drive: {e}")
     
     cierre = CierreDia(
         excel_path=EXCEL_EMPRESA,
-        db_path=DB_PATH,
-        subir_drive_func=subir_drive
+        db_path=DB_PATH
     )
     
+    # Verificar
     verificacion = cierre.verificar_cierre_seguro()
     
     if not verificacion['seguro']:
         logger.warning(f"[CIERRE] ⚠️ {verificacion['advertencia']}")
-        if len(sys.argv) > 1 and sys.argv[1] == "--forzar":
-            logger.info("[CIERRE] Forzando cierre...")
-        else:
-            logger.warning("[CIERRE] Use --forzar para continuar")
+        if len(sys.argv) <= 1 or sys.argv[1] != "--forzar":
+            logger.warning("[CIERRE] Use --forzar para ignorar.")
             sys.exit(1)
     
+    # Ejecutar
     resultado = cierre.ejecutar_cierre()
     
     if resultado['exito']:
-        logger.info("[CIERRE] ✅ Completado")
+        print(f"✅ Excel creado: {resultado['excel_nuevo']}")
         sys.exit(0)
     else:
-        logger.error(f"[CIERRE] ❌ Errores: {resultado['errores']}")
+        print(f"❌ Errores: {resultado['errores']}")
         sys.exit(1)
