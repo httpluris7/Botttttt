@@ -69,6 +69,7 @@ from registros_conductor import crear_registros_conductor
 from incidencias_conductor import crear_incidencias_conductor
 from cierre_dia import crear_cierre_dia
 from cierre_dia_handler import crear_cierre_handler
+from conductores_panel import crear_conductores_panel
 
 gestiones_manager = None
 modificador_ruta = None
@@ -2163,6 +2164,16 @@ def main():
     cierre_dia_handler = crear_cierre_handler(cierre, es_admin, teclado_admin)
     app.add_handler(cierre_dia_handler.get_conversation_handler())
     logger.info("✅ Cierre de día")
+
+    # Añadir handler en main() (después de línea 2165)
+    conductores_panel = crear_conductores_panel(
+        config.EXCEL_EMPRESA,
+        config.DB_PATH,
+        es_admin,
+        subir_excel_a_drive if config.DRIVE_ENABLED else None
+    )
+    app.add_handler(conductores_panel.get_conversation_handler())
+    logger.info("✅ Panel conductores")
     
     # Handlers para callbacks de rutas (ADMIN)
     app.add_handler(CallbackQueryHandler(callback_ver_rutas, pattern="^rutas:(?!volver)"))

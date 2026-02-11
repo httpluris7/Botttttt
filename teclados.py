@@ -1,17 +1,14 @@
 """
-TECLADOS - BOTONES RÁPIDOS v2.2
+TECLADOS - BOTONES RÁPIDOS v2.3
 ================================
 Teclados con botones para conductores y admins.
 
+Cambios v2.3:
+- Eliminado "✏️ Modificar camionero" (fusionado en panel Conductores)
+- Eliminado "🗺️ Estado de la flota" (fusionado en panel Conductores)
+
 Cambios v2.2:
 - Añadido botón "🔄 Modificar viaje en ruta" para admin
-
-Cambios v2.1:
-- Añadido botón "📋 Consultar rutas" para admin
-- Eliminado botón Clima
-
-Uso:
-    from teclados import teclado_conductor, teclado_admin, obtener_teclado
 """
 
 from telegram import ReplyKeyboardMarkup, KeyboardButton
@@ -65,10 +62,10 @@ teclado_viajes = ReplyKeyboardMarkup(
     one_time_keyboard=False
 )
 
-# Submenú: Flota
+# Submenú: Flota (SIMPLIFICADO - v2.3)
 BOTONES_FLOTA = [
-    ["👥 Conductores", "🗺️ Estado de la flota"],
-    ["➕ Añadir camionero", "✏️ Modificar camionero"],
+    ["👥 Conductores"],
+    ["➕ Añadir camionero"],
     ["⬅️ Volver al menú"]
 ]
 
@@ -152,11 +149,9 @@ MAPEO_BOTONES = {
     "➕ Añadir viaje": "añadir_viaje",
     "✏️ Modificar viaje": "modificar_viaje",
     
-    # Admin - Submenú Flota
+    # Admin - Submenú Flota (SIMPLIFICADO)
     "👥 Conductores": "conductores",
-    "🗺️ Estado de la flota": "estado_flota",
     "➕ Añadir camionero": "añadir_camionero",
-    "✏️ Modificar camionero": "modificar_camionero",
     
     # Admin - Submenú Informes
     "📊 Estadísticas": "estadisticas",
