@@ -201,7 +201,6 @@ class CierreDiaHandler:
             
             await query.edit_message_text(
                 texto,
-                parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             
