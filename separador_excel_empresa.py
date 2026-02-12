@@ -1,7 +1,12 @@
 """
-SEPARADOR DE EXCEL DE EMPRESA v2.1
+SEPARADOR DE EXCEL DE EMPRESA v2.2
 ===================================
 Lee PRUEBO.xlsx (formato de la empresa) y lo separa en tablas internas.
+
+CAMBIOS v2.2:
+- FIX Bug CRÍTICO: conductor_asignado leía columna E (nombre conductor) 
+  en vez de columna V (TRANSPORTISTA). Esto causaba que el asignador
+  pensara que todos los viajes ya tenían conductor asignado.
 
 CAMBIOS v2.1:
 - FIX Bug #1: Preserva telegram_id y telefono durante sync
@@ -168,7 +173,7 @@ class SeparadorExcelEmpresa:
         conductores_vistos = set()
         
         for idx in range(2, len(df)):
-            nombre = df.iloc[idx, 4]  # Columna TRANSPORTISTA
+            nombre = df.iloc[idx, 4]  # Columna E = Nombre conductor
             
             if pd.isna(nombre) or not str(nombre).strip():
                 continue
@@ -268,7 +273,7 @@ class SeparadorExcelEmpresa:
                 "observaciones": str(df.iloc[idx, 27]).strip() if pd.notna(df.iloc[idx, 27]) else "",
                 "zona": self._detectar_zona(df, idx),
                 "fila_excel": idx,
-                "conductor_asignado": str(df.iloc[idx, 4]).strip() if pd.notna(df.iloc[idx, 4]) else "",
+                "conductor_asignado": str(df.iloc[idx, 21]).strip() if pd.notna(df.iloc[idx, 21]) else "",  # Columna V = TRANSPORTISTA
                 "tractora_asignada": str(df.iloc[idx, 6]).strip() if pd.notna(df.iloc[idx, 6]) else ""
             }
             viajes.append(viaje)
