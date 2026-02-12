@@ -1,7 +1,11 @@
 """
-SIMULADOR DE API MOVILDATA v3.1
+SIMULADOR DE API MOVILDATA v3.2
 ================================
 Simula todos los endpoints de Movildata.
+
+CAMBIOS v3.2:
+- FIX: refrescar_posiciones_desde_bd ahora añade conductores nuevos
+  (antes solo actualizaba los existentes, ignorando conductores añadidos después del arranque)
 
 CAMBIOS v3.1:
 - Las coordenadas se obtienen de la ubicación del conductor en la BD
@@ -111,7 +115,7 @@ class DisponibilidadConductor:
 
 
 # ============================================================
-# UBICACIONES BASE - AMPLIADO v3.1
+# UBICACIONES BASE - AMPLIADO v3.2
 # ============================================================
 
 UBICACIONES_BASE = {
@@ -250,7 +254,7 @@ class MovildataAPI:
         if self.use_real:
             logger.info(f"[MOVILDATA] Conectando a API real: {self.api_url}")
         else:
-            logger.info("[MOVILDATA] Usando simulador v3.1 (coordenadas desde BD)")
+            logger.info("[MOVILDATA] Usando simulador v3.2 (coordenadas desde BD)")
             self._init_simulated_data()
     
     def _obtener_coordenadas_ubicacion(self, ubicacion: str) -> tuple:
@@ -591,27 +595,100 @@ class MovildataAPI:
     def refrescar_posiciones_desde_bd(self):
         """
         Refresca las posiciones de los conductores desde la BD.
-        Llamar este método para actualizar las coordenadas cuando cambie la ubicación.
+        También añade conductores nuevos que no estén en la API.
         """
         try:
             conductores_bd = self._cargar_conductores_bd()
+            ahora = datetime.now()
+            nuevos = 0
             
             for c in conductores_bd:
                 matricula = c.get('matricula', '')
                 ubicacion = c.get('ubicacion', '')
+                nombre = c.get('nombre', '')
                 
-                if matricula and matricula in self._posiciones:
-                    lat, lon = self._obtener_coordenadas_ubicacion(ubicacion)
-                    provincia = self._obtener_provincia_ubicacion(ubicacion)
-                    
+                if not matricula:
+                    continue
+                
+                lat, lon = self._obtener_coordenadas_ubicacion(ubicacion)
+                provincia = self._obtener_provincia_ubicacion(ubicacion)
+                
+                if matricula in self._posiciones:
+                    # Actualizar existente
                     pos = self._posiciones[matricula]
                     pos.latitud = lat
                     pos.longitud = lon
                     pos.municipio = ubicacion
                     pos.provincia = provincia
-                    pos.fecha_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    pos.fecha_hora = ahora.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    # AÑADIR NUEVO CONDUCTOR
+                    nuevos += 1
+                    idx = len(self._conductores)
+                    nif = f"SIM{idx:05d}X"
+                    
+                    # Crear posición GPS
+                    self._posiciones[matricula] = PosicionGPS(
+                        matricula=matricula,
+                        latitud=lat,
+                        longitud=lon,
+                        velocidad=0,
+                        rumbo=random.randint(0, 359),
+                        fecha_hora=ahora.strftime("%Y-%m-%d %H:%M:%S"),
+                        direccion=f"Calle Principal, {ubicacion}",
+                        municipio=ubicacion,
+                        provincia=provincia,
+                        motor_encendido=False
+                    )
+                    
+                    # Crear estado vehículo
+                    self._estados[matricula] = EstadoVehiculo(
+                        matricula=matricula,
+                        estado="DISPONIBLE",
+                        desde=ahora.strftime("%Y-%m-%d %H:%M:%S"),
+                        conductor_nif=nif,
+                        conductor_nombre=nombre,
+                        temperatura=random.uniform(-20, -18)
+                    )
+                    
+                    # Crear conductor
+                    partes_nombre = nombre.split(' ', 1)
+                    nombre_pila = partes_nombre[0] if partes_nombre else nombre
+                    apellidos = partes_nombre[1] if len(partes_nombre) > 1 else ""
+                    
+                    self._conductores.append(Conductor(
+                        id=idx + 1,
+                        nif=nif,
+                        nombre=nombre_pila,
+                        apellidos=apellidos,
+                        telefono=c.get('telefono', ''),
+                        email=f"{nombre_pila.lower()}@empresa.com",
+                        activo=True,
+                        grupo="ZONA NORTE"
+                    ))
+                    
+                    # Crear vehículo
+                    self._vehiculos.append(Vehiculo(
+                        id=idx + 1,
+                        matricula=matricula,
+                        tipo="TRAILER",
+                        marca="VOLVO",
+                        modelo="FH500",
+                        conductor_asignado=nombre,
+                        remolque_asignado=c.get('remolque', ''),
+                        tipo_remolque="FRIGORIFICO",
+                        capacidad_kg=24000
+                    ))
+                    
+                    # Crear disponibilidad
+                    self._disponibilidad[nif] = self._generar_disponibilidad(nif, nombre, ahora)
+                    
+                    logger.info(f"[MOVILDATA] ➕ Añadido nuevo: {nombre} ({matricula}) en {ubicacion}")
             
-            logger.info("[MOVILDATA] ✅ Posiciones refrescadas desde BD")
+            if nuevos > 0:
+                logger.info(f"[MOVILDATA] ✅ Refrescado: {nuevos} nuevos conductores añadidos")
+            else:
+                logger.info("[MOVILDATA] ✅ Posiciones refrescadas desde BD")
             
         except Exception as e:
             logger.error(f"[MOVILDATA] Error refrescando posiciones: {e}")
