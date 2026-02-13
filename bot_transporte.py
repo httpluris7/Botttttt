@@ -67,6 +67,7 @@ from gestiones_manager import GestionesManager
 from modificador_viajes_ruta import ModificadorViajesRuta
 from registros_conductor import crear_registros_conductor
 from incidencias_conductor import crear_incidencias_conductor
+from albaranes_conductor import crear_albaranes_conductor
 from cierre_dia import crear_cierre_dia
 from cierre_dia_handler import crear_cierre_handler
 from conductores_panel import crear_conductores_panel
@@ -2152,6 +2153,17 @@ def main():
     )
     app.add_handler(incidencias.get_conversation_handler())
     logger.info("✅ Incidencias conductor")
+    
+    # Albaranes
+    from teclados import teclado_conductor
+    albaranes = crear_albaranes_conductor(
+        config.DB_PATH,
+        drive_service,
+        None,
+        teclado_conductor
+    )
+    app.add_handler(albaranes.get_conversation_handler())
+    logger.info("✅ Albaranes conductor")
     
     # Cierre de día
     global cierre_dia_handler
