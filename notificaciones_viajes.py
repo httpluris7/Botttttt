@@ -1,7 +1,11 @@
 """
-NOTIFICACIONES DE VIAJES
-=========================
+NOTIFICACIONES DE VIAJES v1.1
+==============================
 Detecta viajes nuevos y notifica automáticamente al conductor.
+
+CAMBIOS v1.1:
+- Corregido encoding UTF-8 (emojis)
+- Mejorado formato del mensaje
 
 Uso:
     from notificaciones_viajes import NotificadorViajes
@@ -12,6 +16,7 @@ Uso:
 
 import sqlite3
 import logging
+import urllib.parse
 from datetime import datetime
 from typing import Dict, List, Optional, Set
 
@@ -38,7 +43,7 @@ class NotificadorViajes:
         # Cargar viajes existentes al iniciar (para no notificar los viejos)
         self._cargar_viajes_existentes()
         
-        logger.info("[NOTIFICADOR] Inicializado")
+        logger.info("[NOTIFICADOR] Inicializado v1.1")
     
     def _cargar_viajes_existentes(self):
         """Carga los viajes existentes para no notificar los viejos al arrancar"""
@@ -96,8 +101,6 @@ class NotificadorViajes:
     
     def _generar_mensaje_viaje(self, viaje: Dict) -> str:
         """Genera el mensaje de notificación para un viaje nuevo"""
-        import urllib.parse
-        
         cliente = viaje.get('cliente', 'N/A')
         mercancia = viaje.get('mercancia', 'N/A')
         lugar_carga = viaje.get('lugar_carga', '?')
@@ -108,14 +111,14 @@ class NotificadorViajes:
         mensaje = "🚛 *NUEVO VIAJE ASIGNADO*\n\n"
         mensaje += f"🏢 *{cliente}*\n"
         mensaje += f"📦 {mercancia}\n"
-        mensaje += f"📏 {km} km\n"
+        mensaje += f"📍 {km} km\n"
         
         # Mostrar si hay intercambio de palés
         if intercambio and str(intercambio).upper().strip() == 'SI':
             mensaje += f"🔄 Intercambio de palés\n"
         
         # Carga
-        mensaje += f"\n{'─'*20}\n"
+        mensaje += f"\n━━━━━━━━━━━━━━━━━━━━\n"
         mensaje += f"📥 *CARGA*\n"
         mensaje += f"📍 {lugar_carga}\n"
         if lugar_carga and lugar_carga != '?':
@@ -123,14 +126,14 @@ class NotificadorViajes:
             mensaje += f"🗺️ [Abrir en Maps]({link_maps})\n"
         
         # Descarga
-        mensaje += f"\n{'─'*20}\n"
+        mensaje += f"\n━━━━━━━━━━━━━━━━━━━━\n"
         mensaje += f"📤 *DESCARGA*\n"
         mensaje += f"📍 {lugar_entrega}\n"
         if lugar_entrega and lugar_entrega != '?':
             link_maps = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(str(lugar_entrega))}"
             mensaje += f"🗺️ [Abrir en Maps]({link_maps})\n"
         
-        mensaje += f"\n{'─'*20}\n"
+        mensaje += f"\n━━━━━━━━━━━━━━━━━━━━\n"
         mensaje += "Pulsa *🚛 Mis viajes* para más detalles"
         
         return mensaje
@@ -234,6 +237,46 @@ class NotificadorViajes:
             "viajes_nuevos": len(viajes_nuevos),
             "notificaciones_enviadas": notificaciones_enviadas
         }
+    
+    async def notificar_asignacion_directa(self, asignacion: Dict) -> bool:
+        """
+        Notifica una asignación directamente (sin detectar de BD).
+        Útil para notificar inmediatamente después de asignar.
+        
+        Args:
+            asignacion: Dict con telegram_id, cliente, lugar_carga, lugar_entrega, etc.
+        
+        Returns:
+            True si se envió correctamente
+        """
+        if not self.bot:
+            logger.warning("[NOTIFICADOR] Bot no configurado")
+            return False
+        
+        telegram_id = asignacion.get('telegram_id')
+        if not telegram_id:
+            logger.warning(f"[NOTIFICADOR] Asignación sin telegram_id")
+            return False
+        
+        mensaje = self._generar_mensaje_viaje(asignacion)
+        
+        try:
+            await self.bot.send_message(
+                chat_id=telegram_id, 
+                text=mensaje,
+                parse_mode="Markdown",
+                disable_web_page_preview=True
+            )
+            logger.info(f"[NOTIFICADOR] Notificación directa enviada a {telegram_id}")
+            
+            # Marcar como notificado
+            viaje_id = self._generar_viaje_id(asignacion)
+            self._viajes_notificados.add(viaje_id)
+            
+            return True
+        except Exception as e:
+            logger.error(f"[NOTIFICADOR] Error enviando notificación directa: {e}")
+            return False
 
 
 # Variable global para el notificador

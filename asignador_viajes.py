@@ -1,7 +1,11 @@
 """
-ASIGNADOR AUTOMÁTICO DE VIAJES v3.0
+ASIGNADOR AUTOMÁTICO DE VIAJES v3.1
 ====================================
 Asigna viajes a conductores con ENCADENAMIENTO INTELIGENTE.
+
+CAMBIOS v3.1:
+- Añade telegram_id a las asignaciones para notificaciones
+- Añade más datos al resultado (lugar_carga, lugar_entrega, mercancia, km)
 
 PROBLEMA RESUELTO:
 - Evita asignar viajes incompatibles
@@ -657,6 +661,22 @@ class AsignadorViajes:
         candidatos.sort(key=lambda x: x.distancia_a_carga)
         return candidatos
     
+    def _obtener_telegram_id(self, nombre_conductor: str) -> Optional[int]:
+        """Obtiene el telegram_id de un conductor por nombre"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT telegram_id FROM conductores_empresa 
+                WHERE nombre = ? AND telegram_id IS NOT NULL
+            """, (nombre_conductor,))
+            row = cursor.fetchone()
+            conn.close()
+            return row[0] if row else None
+        except Exception as e:
+            logger.error(f"[ASIGNADOR] Error obteniendo telegram_id: {e}")
+            return None
+    
     def asignar_viaje(self, viaje: ViajeParaAsignar, conductor: ConductorDisponible) -> bool:
         """Asigna viaje a conductor en BD y actualiza Excel"""
         try:
@@ -791,16 +811,24 @@ class AsignadorViajes:
                         'lon': viaje.lon_descarga
                     }
                     
+                    # Obtener telegram_id del conductor para notificación
+                    telegram_id = self._obtener_telegram_id(mejor.nombre)
+                    
                     resultado["asignaciones"].append({
                         "viaje_id": viaje.id,
                         "cliente": viaje.cliente,
+                        "lugar_carga": viaje.lugar_carga,
+                        "lugar_entrega": viaje.lugar_entrega,
                         "ruta": f"{viaje.lugar_carga} → {viaje.lugar_entrega}",
+                        "mercancia": viaje.mercancia,
+                        "km": viaje.km,
+                        "precio": viaje.precio,
                         "conductor": mejor.nombre,
                         "matricula": mejor.matricula,
+                        "telegram_id": telegram_id,
                         "distancia_a_carga": round(mejor.distancia_a_carga, 1),
                         "prioridad": viaje.prioridad,
                         "urgente": viaje.urgente,
-                        "precio": viaje.precio,
                         "horas_disponibles": mejor.horas_restantes_hoy,
                         "encadenado": mejor.tiene_viajes_asignados,
                         "desde": mejor.ultima_descarga if mejor.tiene_viajes_asignados else "GPS"
