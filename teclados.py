@@ -1,7 +1,10 @@
 """
-TECLADOS - BOTONES RÁPIDOS v2.3
+TECLADOS - BOTONES RÁPIDOS v2.4
 ================================
 Teclados con botones para conductores y admins.
+
+Cambios v2.4:
+- Añadido "📸 Registrar albarán" para conductores
 
 Cambios v2.3:
 - Eliminado "✏️ Modificar camionero" (fusionado en panel Conductores)
@@ -21,8 +24,8 @@ from telegram import ReplyKeyboardMarkup, KeyboardButton
 BOTONES_CONDUCTOR = [
     ["🚛 Mis viajes", "🚚 Mi camión"],
     ["⛽ Gasolineras", "📍 Mi ubicación"],
-    ["📝 Registros", "⚠️ Incidencia"],
-    ["📊 Resumen"]
+    ["📝 Registros", "📸 Registrar albarán"],
+    ["⚠️ Incidencia", "📊 Resumen"]
 ]
 
 teclado_conductor = ReplyKeyboardMarkup(
@@ -130,6 +133,7 @@ MAPEO_BOTONES = {
     "📍 Mi ubicación": "mi_ubicacion",
     "🚚 Mi camión": "mi_camion",
     "📝 Registros": "registros",
+    "📸 Registrar albarán": "albaran",
     "⚠️ Incidencia": "incidencia",
     "📊 Resumen": "resumen",
     
