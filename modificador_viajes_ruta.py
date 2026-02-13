@@ -1,8 +1,13 @@
 """
-MODIFICAR VIAJES EN RUTA (v2.0 - MULTI-CARGA/DESCARGA)
+MODIFICAR VIAJES EN RUTA (v2.1 - FIX CANCELAR)
 ========================================================
 Sistema para que los admins modifiquen viajes de conductores en ruta.
 Ahora soporta hasta 10 cargas y 10 descargas por viaje.
+
+CAMBIOS v2.1:
+- FIX: Añadido CallbackQueryHandler para botón "❌ Cancelar" en InlineKeyboards
+- FIX: Añadido handler cancelar en estados de cargas/descargas
+- Antes: El bot se quedaba "enganchado" al pulsar cancelar en InlineKeyboard
 
 Flujo:
 1. Admin selecciona "Modificar viaje en ruta"
@@ -194,7 +199,7 @@ class ModificadorViajesRuta:
             '9': ('km', '📏 Kilómetros'),
         }
         
-        logger.info("[MOD_RUTA] Modificador de viajes en ruta v2.0 inicializado")
+        logger.info("[MOD_RUTA] Modificador de viajes en ruta v2.1 inicializado")
     
     def get_conversation_handler(self):
         """Devuelve el ConversationHandler para modificar viajes en ruta"""
@@ -206,11 +211,13 @@ class ModificadorViajesRuta:
             states={
                 MOD_RUTA_ZONA: [
                     CallbackQueryHandler(self.seleccionar_zona, pattern="^zona_"),
+                    CallbackQueryHandler(self.cancelar, pattern="^cancelar$"),
                     MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                 ],
                 MOD_RUTA_CONDUCTOR: [
                     CallbackQueryHandler(self.seleccionar_conductor, pattern="^conductor_"),
                     CallbackQueryHandler(self.volver_zonas, pattern="^volver_zonas$"),
+                    CallbackQueryHandler(self.cancelar, pattern="^cancelar$"),
                     MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                 ],
                 MOD_RUTA_DETALLE: [
@@ -218,29 +225,35 @@ class ModificadorViajesRuta:
                     CallbackQueryHandler(self.llamar_conductor, pattern="^llamar_"),
                     CallbackQueryHandler(self.volver_conductores, pattern="^volver_conductores$"),
                     CallbackQueryHandler(self.confirmar_cambios, pattern="^confirmar_si$"),
+                    CallbackQueryHandler(self.cancelar, pattern="^cancelar$"),
                     MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                 ],
                 MOD_RUTA_VALOR: [
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.volver_detalle),
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.guardar_valor),
                 ],
                 MOD_RUTA_CONFIRMAR: [
                     CallbackQueryHandler(self.confirmar_cambios, pattern="^confirmar_si$"),
                     CallbackQueryHandler(self.volver_detalle, pattern="^confirmar_no$"),
+                    CallbackQueryHandler(self.cancelar, pattern="^cancelar$"),
                 ],
                 # === GESTIÓN CARGAS EN RUTA ===
                 MOD_RUTA_CARGAS_MENU: [
                     MessageHandler(filters.Regex("^➕ Añadir carga$"), self._ruta_cargas_añadir),
                     MessageHandler(filters.Regex("^🗑️ Eliminar carga$"), self._ruta_cargas_pedir_eliminar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._ruta_cargas_volver),
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._ruta_cargas_seleccionar),
                 ],
                 MOD_RUTA_CARGAS_EDITAR: [
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._ruta_mostrar_cargas_menu),
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._ruta_cargas_guardar_edicion),
                 ],
                 MOD_RUTA_CARGAS_ELIMINAR: [
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._ruta_mostrar_cargas_menu),
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._ruta_cargas_confirmar_eliminar),
                 ],
                 # === GESTIÓN DESCARGAS EN RUTA ===
@@ -248,20 +261,24 @@ class ModificadorViajesRuta:
                     MessageHandler(filters.Regex("^➕ Añadir descarga$"), self._ruta_descargas_añadir),
                     MessageHandler(filters.Regex("^🗑️ Eliminar descarga$"), self._ruta_descargas_pedir_eliminar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._ruta_descargas_volver),
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._ruta_descargas_seleccionar),
                 ],
                 MOD_RUTA_DESCARGAS_EDITAR: [
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._ruta_mostrar_descargas_menu),
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._ruta_descargas_guardar_edicion),
                 ],
                 MOD_RUTA_DESCARGAS_ELIMINAR: [
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self._ruta_mostrar_descargas_menu),
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self._ruta_descargas_confirmar_eliminar),
                 ],
             },
             fallbacks=[
                 CommandHandler("cancelar", self.cancelar),
                 MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
+                CallbackQueryHandler(self.cancelar, pattern="^cancelar$"),
             ],
         )
 
