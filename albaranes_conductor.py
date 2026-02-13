@@ -460,10 +460,13 @@ class AlbaranesConductor:
                 os.remove(ruta_temp)
             
             if exito:
+                # Escapar caracteres especiales para Markdown
+                nombre_escapado = nombre_archivo.replace("_", "\\_").replace("*", "\\*")
+                
                 await update.message.reply_text(
                     f"✅ *¡ALBARÁN REGISTRADO!*\n\n"
-                    f"📁 Carpeta: Albaranes/{fecha_carpeta}/\n"
-                    f"📄 Archivo: {nombre_archivo}\n\n"
+                    f"📁 Carpeta: `Albaranes/{fecha_carpeta}/`\n"
+                    f"📄 Archivo: `{nombre_archivo}`\n\n"
                     f"_El albarán se ha guardado correctamente._",
                     parse_mode="Markdown",
                     reply_markup=self.teclado_conductor
