@@ -1,7 +1,12 @@
 """
-ALBARANES DE CONDUCTOR v1.0
+ALBARANES DE CONDUCTOR v1.1
 ============================
 Permite a los conductores subir fotos de albaranes a Google Drive.
+
+CAMBIOS v1.1:
+- Máximo 3 fotos por viaje/día (sin mensaje al usuario)
+- Mensajes simplificados para el conductor
+- Sin información técnica visible
 
 Estructura en Drive:
 📁 Albaranes/
@@ -66,7 +71,7 @@ class AlbaranesConductor:
         self.carpeta_albaranes_id = carpeta_albaranes_id
         self.teclado_conductor = teclado_conductor
         self._cache_carpetas = {}  # Cache de IDs de carpetas por fecha
-        logger.info("[ALBARANES] Módulo de albaranes v1.0 inicializado")
+        logger.info("[ALBARANES] Módulo de albaranes v1.1 inicializado")
     
     def set_drive_service(self, drive_service):
         """Permite establecer drive_service después de init"""
@@ -218,6 +223,46 @@ class AlbaranesConductor:
         except Exception as e:
             logger.error(f"[ALBARANES] Error con carpeta {nombre_carpeta}: {e}")
             return None
+    
+    def _contar_fotos_viaje(self, carpeta_fecha: str, patron_nombre: str) -> int:
+        """
+        Cuenta cuántas fotos ya existen de este viaje en el día.
+        patron_nombre: parte del nombre sin hora (CONDUCTOR_CLIENTE_RUTA)
+        """
+        if not self.drive_service:
+            return 0
+        
+        try:
+            # Obtener carpeta Albaranes
+            carpeta_albaranes = self._obtener_o_crear_carpeta(
+                "Albaranes", 
+                self.carpeta_albaranes_id
+            )
+            if not carpeta_albaranes:
+                return 0
+            
+            # Obtener carpeta del día
+            carpeta_dia = self._obtener_o_crear_carpeta(
+                carpeta_fecha, 
+                carpeta_albaranes
+            )
+            if not carpeta_dia:
+                return 0
+            
+            # Buscar archivos que contengan el patrón
+            query = f"'{carpeta_dia}' in parents and name contains '{patron_nombre}' and trashed = false"
+            
+            results = self.drive_service.files().list(
+                q=query,
+                fields="files(id, name)",
+                pageSize=10
+            ).execute()
+            
+            return len(results.get('files', []))
+            
+        except Exception as e:
+            logger.error(f"[ALBARANES] Error contando fotos: {e}")
+            return 0
     
     def _subir_foto_a_drive(self, ruta_local: str, nombre_archivo: str, 
                             carpeta_fecha: str) -> bool:
@@ -438,10 +483,23 @@ class AlbaranesConductor:
         
         nombre_conductor = conductor.get('nombre', 'CONDUCTOR')
         nombre_conductor = re.sub(r'\s+', '-', nombre_conductor.upper())
-        cliente = re.sub(r'\s+', '-', cliente.upper())
-        ruta = re.sub(r'\s+', '-', ruta.upper())
+        cliente_norm = re.sub(r'\s+', '-', cliente.upper())
+        ruta_norm = re.sub(r'\s+', '-', ruta.upper())
         
-        nombre_archivo = f"{hora}_{nombre_conductor}_{cliente}_{ruta}.jpg"
+        # Patrón para buscar fotos existentes (sin la hora)
+        patron_viaje = f"{nombre_conductor}_{cliente_norm}_{ruta_norm}"
+        
+        # Verificar límite de 3 fotos por viaje
+        fotos_existentes = self._contar_fotos_viaje(fecha_carpeta, patron_viaje)
+        if fotos_existentes >= 3:
+            await update.message.reply_text(
+                "✅ Ya has registrado el albarán de este viaje.",
+                reply_markup=self.teclado_conductor
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
+        
+        nombre_archivo = f"{hora}_{patron_viaje}.jpg"
         
         # Descargar foto temporalmente
         ruta_temp = f"/tmp/{nombre_archivo}"
@@ -450,9 +508,7 @@ class AlbaranesConductor:
             archivo = await foto.get_file()
             await archivo.download_to_drive(ruta_temp)
             
-            await update.message.reply_text("⏳ Subiendo albarán a Drive...")
-            
-            # Subir a Drive
+            # Subir a Drive (sin mensaje al usuario)
             exito = self._subir_foto_a_drive(ruta_temp, nombre_archivo, fecha_carpeta)
             
             # Eliminar archivo temporal
@@ -460,28 +516,20 @@ class AlbaranesConductor:
                 os.remove(ruta_temp)
             
             if exito:
-                # Escapar caracteres especiales para Markdown
-                nombre_escapado = nombre_archivo.replace("_", "\\_").replace("*", "\\*")
-                
                 await update.message.reply_text(
-                    f"✅ *¡ALBARÁN REGISTRADO!*\n\n"
-                    f"📁 Carpeta: `Albaranes/{fecha_carpeta}/`\n"
-                    f"📄 Archivo: `{nombre_archivo}`\n\n"
-                    f"_El albarán se ha guardado correctamente._",
-                    parse_mode="Markdown",
+                    "✅ Albarán registrado correctamente.",
                     reply_markup=self.teclado_conductor
                 )
             else:
                 await update.message.reply_text(
-                    "❌ Error subiendo el albarán a Drive.\n"
-                    "Por favor, inténtalo de nuevo o contacta con el administrador.",
+                    "❌ Error al guardar el albarán. Inténtalo de nuevo.",
                     reply_markup=self.teclado_conductor
                 )
             
         except Exception as e:
             logger.error(f"[ALBARANES] Error procesando foto: {e}")
             await update.message.reply_text(
-                f"❌ Error procesando la foto: {e}",
+                "❌ Error al procesar la foto. Inténtalo de nuevo.",
                 reply_markup=self.teclado_conductor
             )
         
