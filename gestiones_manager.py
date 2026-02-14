@@ -1,7 +1,15 @@
 """
-GESTIONES - CAMIONEROS Y VIAJES (v2.0 - MULTI-CARGA/DESCARGA)
+GESTIONES - CAMIONEROS Y VIAJES (v2.2 - SIN MOD_VIAJE)
 ===============================================================
 Sistema completo para añadir y modificar camioneros y viajes.
+
+CAMBIOS v2.2:
+- DESACTIVADO handler "✏️ Modificar viaje" → usar modificador_viajes_pendientes.py
+
+CAMBIOS v2.1:
+- Mejorado formato de lista de viajes (similar a modificar en ruta)
+
+CAMBIOS v2.0:
 - Hasta 10 cargas y 10 descargas por viaje
 - Botón "Volver atrás" durante creación
 - Botón "Editar" antes de confirmar
@@ -262,12 +270,12 @@ class GestionesManager:
                 CommandHandler("anadir_conductor", self.inicio_añadir_conductor),
                 CommandHandler("anadir_viaje", self.inicio_añadir_viaje),
                 CommandHandler("modificar_conductor", self.inicio_modificar_conductor),
-                CommandHandler("modificar_viaje", self.inicio_modificar_viaje),
+                # CommandHandler("modificar_viaje", self.inicio_modificar_viaje),  # DESACTIVADO - usar modificador_viajes_pendientes.py
                 # Nuevos botones desde submenús
                 MessageHandler(filters.Regex("^➕ Añadir camionero$"), self.inicio_añadir_conductor),
                 MessageHandler(filters.Regex("^✏️ Modificar camionero$"), self.inicio_modificar_conductor),
                 MessageHandler(filters.Regex("^➕ Añadir viaje$"), self.inicio_añadir_viaje),
-                MessageHandler(filters.Regex("^✏️ Modificar viaje$"), self.inicio_modificar_viaje),
+                # MessageHandler(filters.Regex("^✏️ Modificar viaje$"), self.inicio_modificar_viaje),  # DESACTIVADO
                 MessageHandler(filters.Regex("^🔄 Sincronizar$"), self.sincronizar_drive),
             ],
             states={
@@ -1857,7 +1865,7 @@ class GestionesManager:
         return camioneros
     
     async def mod_listar_viajes(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Lista viajes sin asignar"""
+        """Lista viajes sin asignar con formato mejorado"""
         viajes = self._get_viajes_sin_asignar(10)
         logger.info(f"[GESTIONES] mod_listar_viajes encontró {len(viajes)} viajes")
         
@@ -1871,18 +1879,35 @@ class GestionesManager:
         context.user_data['viajes_lista'] = viajes
         context.user_data['tipo'] = 'viaje'
         
-        mensaje = "✏️ *MODIFICAR VIAJE*\n\n📦 Últimos viajes sin asignar:\n\n"
-        for i, v in enumerate(viajes, 1):
-            precio = v.get('precio', 0)
-            precio_str = f"{precio:.0f}€" if precio else "Sin precio"
-            n_cargas = len(v.get('cargas', []))
-            n_descargas = len(v.get('descargas', []))
-            mensaje += f"*{i}.* {v.get('cliente', '?')} | {v.get('lugar_carga', '?')} → {v.get('lugar_descarga', '?')}"
-            if n_cargas > 1 or n_descargas > 1:
-                mensaje += f" ({n_cargas}C/{n_descargas}D)"
-            mensaje += f" | {precio_str}\n"
+        mensaje = "✏️ *MODIFICAR VIAJE*\n\n📦 *Viajes pendientes de asignar:*\n"
         
-        mensaje += f"\n¿Cuál quieres modificar? (1-{len(viajes)})"
+        for i, v in enumerate(viajes, 1):
+            cliente = v.get('cliente', '?')
+            carga = v.get('lugar_carga', '?') or '?'
+            descarga = v.get('lugar_descarga', '?') or '?'
+            mercancia = v.get('mercancia', '-') or '-'
+            km = v.get('km', 0) or 0
+            precio = v.get('precio', 0) or 0
+            
+            precio_str = f"{precio:.0f}€" if precio else "Sin precio"
+            km_str = f"{km} km" if km else ""
+            
+            mensaje += f"\n*{i}.* 🏢 *{cliente}*\n"
+            mensaje += f"    📥 {carga} → 📤 {descarga}\n"
+            
+            # Línea de detalles
+            detalles = []
+            if mercancia and mercancia != '-':
+                detalles.append(f"📦 {mercancia}")
+            if km_str:
+                detalles.append(km_str)
+            detalles.append(precio_str)
+            
+            mensaje += f"    {' | '.join(detalles)}\n"
+        
+        mensaje += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+        mensaje += f"¿Cuál quieres modificar? *(1-{len(viajes)})*"
+        
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
             mensaje, parse_mode="Markdown",
