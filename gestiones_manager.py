@@ -1,18 +1,16 @@
 """
-GESTIONES - CAMIONEROS Y VIAJES (v2.5 - BOTONES INLINE + ASIGNAR CONDUCTOR)
+GESTIONES - CAMIONEROS Y VIAJES (v2.6 - FIX CALLBACKS)
 ===============================================================
 Sistema completo para añadir y modificar camioneros y viajes.
+
+CAMBIOS v2.6:
+- FIX: Callbacks no pueden asignar update.message (error PTB v20+)
+- mod_guardar_callback y mod_volver_lista_callback reescritos
 
 CAMBIOS v2.5:
 - Solo muestra conductores SIN viaje asignado al asignar
 - Sincroniza BD después de guardar
 - Handler Modificar viaje ACTIVO
-
-CAMBIOS v2.4:
-- Lista de viajes con botones inline
-- Campos editables con botones
-- Nuevo campo "Asignar Conductor" con lista de conductores
-- Notificación automática al conductor cuando se le asigna viaje
 
 CAMBIOS v2.1:
 - Mejorado formato de lista de viajes (similar a modificar en ruta)
@@ -2244,21 +2242,155 @@ class GestionesManager:
         return await self._mod_mostrar_resumen_viaje_callback(update, context)
     
     async def mod_guardar_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Guarda cambios (callback)"""
+        """Guarda cambios (callback) - versión directa sin reusar mod_guardar"""
         query = update.callback_query
         await query.answer()
         
-        # Reutilizar lógica existente
-        update.message = query.message
-        return await self.mod_guardar(update, context)
+        tipo = context.user_data.get('tipo', 'viaje')
+        
+        if tipo == 'camionero':
+            # Para camionero, enviar mensaje y llamar a guardar
+            await query.message.reply_text("⏳ Guardando...")
+            # Crear un pseudo-update con el message
+            class PseudoUpdate:
+                def __init__(self, msg):
+                    self.message = msg
+                    self.effective_user = update.effective_user
+            pseudo = PseudoUpdate(query.message)
+            return await self._mod_guardar_camionero(pseudo, context)
+        
+        via = context.user_data.get('viaje', {})
+        fila = context.user_data.get('viaje_fila')
+        conductor_asignado = context.user_data.get('conductor_asignado')
+        _sync_compat(via)
+        
+        if not fila:
+            await query.edit_message_text("❌ Error: no se encontró la fila del viaje.")
+            return ConversationHandler.END
+        
+        try:
+            wb = openpyxl.load_workbook(self.excel_path)
+            ws = wb.active
+            
+            ws.cell(row=fila, column=9, value=via.get('cliente'))
+            ws.cell(row=fila, column=10, value=via.get('num_pedido'))
+            ws.cell(row=fila, column=11, value=via.get('ref_cliente'))
+            ws.cell(row=fila, column=12, value=via.get('intercambio', 'NO'))
+            
+            # Cargas
+            cargas = via.get('cargas', [])
+            if cargas:
+                ws.cell(row=fila, column=14, value=cargas[0])
+                ws.cell(row=fila, column=14).comment = None
+                if len(cargas) > 1:
+                    ws.cell(row=fila, column=14).comment = Comment(_generar_comentario_cargas(cargas), "Bot")
+            
+            # Descargas
+            descargas = via.get('descargas', [])
+            if descargas:
+                ws.cell(row=fila, column=17, value=descargas[0])
+                ws.cell(row=fila, column=17).comment = None
+                if len(descargas) > 1:
+                    ws.cell(row=fila, column=17).comment = Comment(_generar_comentario_descargas(descargas), "Bot")
+            
+            ws.cell(row=fila, column=20, value=via.get('mercancia'))
+            
+            precio = via.get('precio', 0)
+            if precio:
+                ws.cell(row=fila, column=23, value=int(precio))
+            km = via.get('km', 0)
+            if km:
+                ws.cell(row=fila, column=24, value=int(km))
+            
+            # Transportista (columna 22)
+            transportista = via.get('transportista', '')
+            if transportista:
+                ws.cell(row=fila, column=22, value=transportista)
+            
+            # Observaciones
+            observaciones = _generar_observaciones(via)
+            ws.cell(row=fila, column=28, value=observaciones)
+            
+            wb.save(self.excel_path)
+            wb.close()
+            
+            logger.info(f"[GESTIONES] Excel guardado fila {fila}")
+            
+            # Sincronizar con Drive
+            drive_ok = self._sync_to_drive()
+            logger.info(f"[GESTIONES] Drive sync: {'OK' if drive_ok else 'FAILED'}")
+            
+            # Sincronizar BD
+            bd_ok = await self._sync_bd()
+            
+            carga_str = ", ".join(cargas) if cargas else "-"
+            descarga_str = ", ".join(descargas) if descargas else "-"
+            
+            mensaje = f"✅ *¡VIAJE MODIFICADO!*\n\n"
+            mensaje += f"🏢 {via.get('cliente')}\n"
+            mensaje += f"📥 Cargas: {carga_str}\n"
+            mensaje += f"📤 Descargas: {descarga_str}\n"
+            if transportista:
+                mensaje += f"🚛 Conductor: {transportista}\n"
+            mensaje += f"💰 {via.get('precio', 0):.0f}€\n\n"
+            
+            if drive_ok and bd_ok:
+                mensaje += "☁️ _Sincronizado con Drive y BD_"
+            elif drive_ok:
+                mensaje += "☁️ _Sincronizado con Drive_"
+            else:
+                mensaje += "⚠️ _Guardado local_"
+            
+            await query.edit_message_text(mensaje, parse_mode="Markdown")
+            await query.message.reply_text("¿Qué más necesitas?", reply_markup=teclado_admin)
+            
+            # Notificar al conductor si se asignó uno nuevo
+            if conductor_asignado and transportista:
+                await self._notificar_conductor_asignacion(via, conductor_asignado)
+            
+        except Exception as e:
+            logger.error(f"[GESTIONES] Error guardando: {e}")
+            await query.edit_message_text(f"❌ Error: {e}")
+        
+        context.user_data.clear()
+        return ConversationHandler.END
     
     async def mod_volver_lista_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Vuelve a la lista de viajes (callback)"""
         query = update.callback_query
         await query.answer()
         
-        update.message = query.message
-        return await self.mod_listar_viajes(update, context)
+        # Obtener viajes sin asignar
+        viajes = self._get_viajes_sin_asignar(10)
+        
+        if not viajes:
+            await query.edit_message_text("📦 No hay viajes sin asignar.")
+            return ConversationHandler.END
+        
+        context.user_data['viajes_lista'] = viajes
+        context.user_data['tipo'] = 'viaje'
+        
+        mensaje = "✏️ *MODIFICAR VIAJE*\n\n📦 *Viajes pendientes de asignar:*\n"
+        keyboard = []
+        
+        for i, v in enumerate(viajes):
+            cliente = v.get('cliente', '?')
+            carga = v.get('lugar_carga', '?') or '?'
+            descarga = v.get('lugar_descarga', '?') or '?'
+            
+            mensaje += f"\n• 🏢 *{cliente}*\n"
+            mensaje += f"  📥 {carga} → 📤 {descarga}\n"
+            
+            btn_text = f"{cliente[:15]} | {carga[:10]}→{descarga[:10]}"
+            keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"modviaje_{i}")])
+        
+        keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="mod_cancelar")])
+        
+        await query.edit_message_text(
+            mensaje, parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        return MOD_ELEGIR_VIAJE
     
     async def cancelar_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Cancela desde callback"""
