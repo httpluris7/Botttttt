@@ -286,7 +286,7 @@ class GestionesManager:
                 MessageHandler(filters.Regex("^➕ Añadir camionero$"), self.inicio_añadir_conductor),
                 MessageHandler(filters.Regex("^✏️ Modificar camionero$"), self.inicio_modificar_conductor),
                 MessageHandler(filters.Regex("^➕ Añadir viaje$"), self.inicio_añadir_viaje),
-                # MessageHandler(filters.Regex("^✏️ Modificar viaje$"), self.inicio_modificar_viaje),  # DESACTIVADO
+                MessageHandler(filters.Regex("^✏️ Modificar viaje$"), self.inicio_modificar_viaje),  # DESACTIVADO
                 MessageHandler(filters.Regex("^🔄 Sincronizar$"), self.sincronizar_drive),
             ],
             states={
