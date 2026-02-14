@@ -1,7 +1,10 @@
 """
-GESTIONES - CAMIONEROS Y VIAJES (v2.2 - SIN MOD_VIAJE)
+GESTIONES - CAMIONEROS Y VIAJES (v2.3 - FIX COLUMNA TRANSPORTISTA)
 ===============================================================
 Sistema completo para añadir y modificar camioneros y viajes.
+
+CAMBIOS v2.3:
+- FIX: _get_viajes_sin_asignar usaba columna 5 (conductor) en vez de 22 (transportista viaje)
 
 CAMBIOS v2.2:
 - DESACTIVADO handler "✏️ Modificar viaje" → usar modificador_viajes_pendientes.py
@@ -1789,10 +1792,12 @@ class GestionesManager:
             ws = wb.active
             for fila in range(3, 200):
                 cliente = ws.cell(row=fila, column=9).value
-                transportista = ws.cell(row=fila, column=5).value
+                # Columna 22 = TRANSPORTISTA del viaje (no columna 5 que es el conductor de la fila)
+                transportista = ws.cell(row=fila, column=22).value
                 if not cliente:
                     continue
-                if transportista:
+                # Saltar si tiene transportista asignado
+                if transportista and str(transportista).strip():
                     continue
                 
                 obs = ws.cell(row=fila, column=28).value or ''
