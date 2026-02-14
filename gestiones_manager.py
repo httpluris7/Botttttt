@@ -1,7 +1,13 @@
 """
-GESTIONES - CAMIONEROS Y VIAJES (v2.3 - FIX COLUMNA TRANSPORTISTA)
+GESTIONES - CAMIONEROS Y VIAJES (v2.4 - BOTONES INLINE + ASIGNAR CONDUCTOR)
 ===============================================================
 Sistema completo para añadir y modificar camioneros y viajes.
+
+CAMBIOS v2.4:
+- Lista de viajes con botones inline
+- Campos editables con botones
+- Nuevo campo "Asignar Conductor" con lista de conductores
+- Notificación automática al conductor cuando se le asigna viaje
 
 CAMBIOS v2.3:
 - FIX: _get_viajes_sin_asignar usaba columna 5 (conductor) en vez de 22 (transportista viaje)
@@ -21,12 +27,13 @@ CAMBIOS v2.0:
 """
 
 import logging
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes, 
     ConversationHandler, 
     CommandHandler, 
     MessageHandler, 
+    CallbackQueryHandler,
     filters
 )
 import openpyxl
@@ -249,6 +256,7 @@ class GestionesManager:
             '8': ('mercancia', '📦 Mercancía'),
             '9': ('km', '📏 Kilómetros'),
             '10': ('precio', '💰 Precio'),
+            '11': ('transportista', '🚛 Conductor'),
         }
         
         # Mapeo de campos de camionero
@@ -278,7 +286,7 @@ class GestionesManager:
                 MessageHandler(filters.Regex("^➕ Añadir camionero$"), self.inicio_añadir_conductor),
                 MessageHandler(filters.Regex("^✏️ Modificar camionero$"), self.inicio_modificar_conductor),
                 MessageHandler(filters.Regex("^➕ Añadir viaje$"), self.inicio_añadir_viaje),
-                MessageHandler(filters.Regex("^✏️ Modificar viaje$"), self.inicio_modificar_viaje),
+                # MessageHandler(filters.Regex("^✏️ Modificar viaje$"), self.inicio_modificar_viaje),  # DESACTIVADO
                 MessageHandler(filters.Regex("^🔄 Sincronizar$"), self.sincronizar_drive),
             ],
             states={
@@ -462,9 +470,9 @@ class GestionesManager:
                 
                 # === MODIFICAR EXISTENTE ===
                 MOD_ELEGIR_VIAJE: [
+                    CallbackQueryHandler(self.mod_elegir_viaje_callback, pattern="^modviaje_"),
+                    CallbackQueryHandler(self.cancelar_callback, pattern="^mod_cancelar$"),
                     MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
-                    MessageHandler(filters.Regex("^⬅️ Volver$"), self.menu_viaje),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.mod_elegir_viaje),
                 ],
                 MOD_ELEGIR_CAMIONERO: [
                     MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
@@ -472,10 +480,13 @@ class GestionesManager:
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.mod_elegir_camionero),
                 ],
                 MOD_CAMPO: [
+                    CallbackQueryHandler(self.mod_elegir_campo_callback, pattern="^modcampo_"),
+                    CallbackQueryHandler(self.mod_asignar_conductor_callback, pattern="^asignar_"),
+                    CallbackQueryHandler(self._mod_mostrar_resumen_viaje_callback, pattern="^mod_volver_resumen$"),
+                    CallbackQueryHandler(self.mod_guardar_callback, pattern="^mod_guardar$"),
+                    CallbackQueryHandler(self.mod_volver_lista_callback, pattern="^mod_volver_lista$"),
+                    CallbackQueryHandler(self.cancelar_callback, pattern="^mod_cancelar$"),
                     MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
-                    MessageHandler(filters.Regex("^⬅️ Volver$"), self.mod_volver_lista),
-                    MessageHandler(filters.Regex("^✅ Guardar cambios$"), self.mod_guardar),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.mod_elegir_campo),
                 ],
                 MOD_VALOR: [
                     MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
@@ -1816,6 +1827,7 @@ class GestionesManager:
                     'km': ws.cell(row=fila, column=24).value or 0,
                     'precio': ws.cell(row=fila, column=23).value or 0,
                     'observaciones': obs,
+                    'transportista': '',  # Sin asignar
                 }
                 
                 # Extraer carga_adicional y descarga_adicional de observaciones
@@ -1885,8 +1897,9 @@ class GestionesManager:
         context.user_data['tipo'] = 'viaje'
         
         mensaje = "✏️ *MODIFICAR VIAJE*\n\n📦 *Viajes pendientes de asignar:*\n"
+        keyboard = []
         
-        for i, v in enumerate(viajes, 1):
+        for i, v in enumerate(viajes):
             cliente = v.get('cliente', '?')
             carga = v.get('lugar_carga', '?') or '?'
             descarga = v.get('lugar_descarga', '?') or '?'
@@ -1894,31 +1907,46 @@ class GestionesManager:
             km = v.get('km', 0) or 0
             precio = v.get('precio', 0) or 0
             
-            precio_str = f"{precio:.0f}€" if precio else "Sin precio"
-            km_str = f"{km} km" if km else ""
+            precio_str = f"{precio:.0f}€" if precio else "S/P"
             
-            mensaje += f"\n*{i}.* 🏢 *{cliente}*\n"
-            mensaje += f"    📥 {carga} → 📤 {descarga}\n"
+            mensaje += f"\n• 🏢 *{cliente}*\n"
+            mensaje += f"  📥 {carga} → 📤 {descarga}\n"
             
-            # Línea de detalles
-            detalles = []
-            if mercancia and mercancia != '-':
-                detalles.append(f"📦 {mercancia}")
-            if km_str:
-                detalles.append(km_str)
-            detalles.append(precio_str)
-            
-            mensaje += f"    {' | '.join(detalles)}\n"
+            # Botón con info resumida
+            btn_text = f"{cliente[:15]} | {carga[:10]}→{descarga[:10]}"
+            keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"modviaje_{i}")])
         
-        mensaje += f"\n━━━━━━━━━━━━━━━━━━━━\n"
-        mensaje += f"¿Cuál quieres modificar? *(1-{len(viajes)})*"
+        keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="mod_cancelar")])
         
-        keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
             mensaje, parse_mode="Markdown",
-            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
         return MOD_ELEGIR_VIAJE
+    
+    async def mod_elegir_viaje_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Selecciona viaje a modificar (callback)"""
+        query = update.callback_query
+        await query.answer()
+        
+        viajes = context.user_data.get('viajes_lista', [])
+        idx = int(query.data.replace("modviaje_", ""))
+        
+        if idx < 0 or idx >= len(viajes):
+            await query.answer("Viaje no válido", show_alert=True)
+            return MOD_ELEGIR_VIAJE
+        
+        viaje = viajes[idx]
+        context.user_data['viaje'] = viaje.copy()
+        context.user_data['viaje_fila'] = viaje['fila']
+        context.user_data['modificando'] = True
+        context.user_data['tipo'] = 'viaje'
+        
+        # Asegurar listas
+        _inicializar_cargas(context.user_data['viaje'])
+        
+        logger.info(f"[GESTIONES] Viaje seleccionado fila {viaje['fila']}: {viaje.get('cliente')}")
+        return await self._mod_mostrar_resumen_viaje_callback(update, context)
     
     async def mod_elegir_viaje(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Selecciona viaje a modificar"""
@@ -1950,58 +1978,281 @@ class GestionesManager:
             await update.message.reply_text(f"⚠️ Introduce un número del 1 al {len(viajes)}:")
             return MOD_ELEGIR_VIAJE
     
-    async def _mod_mostrar_resumen_viaje(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Muestra resumen del viaje con cargas/descargas"""
-        via = context.user_data.get('viaje', {})
+    def _generar_resumen_viaje_keyboard(self, via: dict):
+        """Genera el mensaje y keyboard para el resumen del viaje"""
         _inicializar_cargas(via)
         
         cargas = via.get('cargas', [])
         descargas = via.get('descargas', [])
         
-        keyboard = [["✅ Guardar cambios"], ["⬅️ Volver", "❌ Cancelar"]]
-        
         mensaje = "✏️ *MODIFICAR VIAJE*\n\n📋 *DATOS ACTUALES:*\n━━━━━━━━━━━━━━━━━━━━\n"
-        mensaje += f"1. 🗺️ Zona: *{via.get('zona', '-')}*\n"
-        mensaje += f"2. 🏢 Cliente: *{via.get('cliente', '-')}*\n"
-        mensaje += f"3. 🔢 Nº Pedido: *{via.get('num_pedido', '-')}*\n"
-        mensaje += f"4. 🏷️ Ref. Cliente: *{via.get('ref_cliente', '-')}*\n"
-        mensaje += f"5. 🔄 Intercambio: *{via.get('intercambio', 'NO')}*\n"
+        mensaje += f"🗺️ Zona: *{via.get('zona', '-')}*\n"
+        mensaje += f"🏢 Cliente: *{via.get('cliente', '-')}*\n"
+        mensaje += f"🔢 Nº Pedido: *{via.get('num_pedido', '-') or '-'}*\n"
+        mensaje += f"🏷️ Ref. Cliente: *{via.get('ref_cliente', '-') or '-'}*\n"
+        mensaje += f"🔄 Intercambio: *{via.get('intercambio', 'NO')}*\n"
         
         # Cargas
-        mensaje += f"6. 📍 Cargas ({len(cargas)}):"
+        mensaje += f"📥 Cargas ({len(cargas)}):"
         if cargas:
             for i, c in enumerate(cargas):
-                mensaje += f"\n   📥 {i+1}. *{c}*"
+                mensaje += f" {c}{',' if i < len(cargas)-1 else ''}"
         else:
             mensaje += " _-_"
         mensaje += "\n"
         
         # Descargas
-        mensaje += f"7. 📍 Descargas ({len(descargas)}):"
+        mensaje += f"📤 Descargas ({len(descargas)}):"
         if descargas:
             for i, d in enumerate(descargas):
-                mensaje += f"\n   📤 {i+1}. *{d}*"
+                mensaje += f" {d}{',' if i < len(descargas)-1 else ''}"
         else:
             mensaje += " _-_"
         mensaje += "\n"
         
-        mensaje += f"8. 📦 Mercancía: *{via.get('mercancia', '-')}*\n"
+        mensaje += f"📦 Mercancía: *{via.get('mercancia', '-') or '-'}*\n"
         
         km = via.get('km', 0) or 0
         precio = via.get('precio', 0) or 0
         km_str = f"{km:.0f}" if km else "-"
         precio_str = f"{precio:.0f}€" if precio else "-"
-        mensaje += f"9. 📏 KM: *{km_str}*\n"
-        mensaje += f"10. 💰 Precio: *{precio_str}*\n"
+        mensaje += f"📏 KM: *{km_str}*\n"
+        mensaje += f"💰 Precio: *{precio_str}*\n"
+        
+        transportista = via.get('transportista', '') or ''
+        transp_str = transportista if transportista else "⚠️ SIN ASIGNAR"
+        mensaje += f"🚛 Conductor: *{transp_str}*\n"
+        
         mensaje += "━━━━━━━━━━━━━━━━━━━━\n\n"
-        mensaje += "¿Qué campo quieres editar? (1-10)\n\nO pulsa *Guardar cambios* para terminar."
+        mensaje += "Pulsa un campo para editarlo:"
+        
+        # Keyboard con botones para cada campo
+        keyboard = [
+            [
+                InlineKeyboardButton("🗺️ Zona", callback_data="modcampo_1"),
+                InlineKeyboardButton("🏢 Cliente", callback_data="modcampo_2"),
+            ],
+            [
+                InlineKeyboardButton("🔢 Nº Pedido", callback_data="modcampo_3"),
+                InlineKeyboardButton("🏷️ Ref. Cliente", callback_data="modcampo_4"),
+            ],
+            [
+                InlineKeyboardButton("🔄 Intercambio", callback_data="modcampo_5"),
+                InlineKeyboardButton("📦 Mercancía", callback_data="modcampo_8"),
+            ],
+            [
+                InlineKeyboardButton("📥 Cargas", callback_data="modcampo_6"),
+                InlineKeyboardButton("📤 Descargas", callback_data="modcampo_7"),
+            ],
+            [
+                InlineKeyboardButton("📏 KM", callback_data="modcampo_9"),
+                InlineKeyboardButton("💰 Precio", callback_data="modcampo_10"),
+            ],
+            [
+                InlineKeyboardButton("🚛 Asignar Conductor", callback_data="modcampo_11"),
+            ],
+            [
+                InlineKeyboardButton("✅ Guardar cambios", callback_data="mod_guardar"),
+            ],
+            [
+                InlineKeyboardButton("⬅️ Volver", callback_data="mod_volver_lista"),
+                InlineKeyboardButton("❌ Cancelar", callback_data="mod_cancelar"),
+            ],
+        ]
+        
+        return mensaje, InlineKeyboardMarkup(keyboard)
+    
+    async def _mod_mostrar_resumen_viaje(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Muestra resumen del viaje con InlineKeyboard"""
+        via = context.user_data.get('viaje', {})
+        mensaje, keyboard = self._generar_resumen_viaje_keyboard(via)
         
         await update.message.reply_text(
             mensaje, parse_mode="Markdown",
-            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            reply_markup=keyboard
         )
         return MOD_CAMPO
     
+    async def _mod_mostrar_resumen_viaje_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Muestra resumen del viaje con InlineKeyboard (desde callback)"""
+        query = update.callback_query
+        via = context.user_data.get('viaje', {})
+        mensaje, keyboard = self._generar_resumen_viaje_keyboard(via)
+        
+        await query.edit_message_text(
+            mensaje, parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+        return MOD_CAMPO
+    
+    async def mod_elegir_campo_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Elige campo a modificar (callback)"""
+        query = update.callback_query
+        await query.answer()
+        
+        campo_num = query.data.replace("modcampo_", "")
+        tipo = context.user_data.get('tipo', 'viaje')
+        
+        if tipo == 'viaje':
+            if campo_num not in self.campos_viaje:
+                await query.answer("Campo no válido", show_alert=True)
+                return MOD_CAMPO
+            
+            campo_key, campo_nombre = self.campos_viaje[campo_num]
+            
+            # Si es cargas o descargas, abrir submenú (por ahora mensaje)
+            if campo_key == 'cargas':
+                context.user_data['_cargas_retorno'] = 'mod'
+                await query.message.reply_text(
+                    "📥 *EDITAR CARGAS*\n\nEscribe las cargas separadas por coma:\nEj: BILBAO, MADRID, VALENCIA",
+                    parse_mode="Markdown",
+                    reply_markup=ReplyKeyboardMarkup([["⬅️ Volver", "❌ Cancelar"]], resize_keyboard=True)
+                )
+                context.user_data['editando_campo'] = 'cargas'
+                return MOD_VALOR
+            elif campo_key == 'descargas':
+                context.user_data['_descargas_retorno'] = 'mod'
+                await query.message.reply_text(
+                    "📤 *EDITAR DESCARGAS*\n\nEscribe las descargas separadas por coma:\nEj: SEVILLA, MALAGA",
+                    parse_mode="Markdown",
+                    reply_markup=ReplyKeyboardMarkup([["⬅️ Volver", "❌ Cancelar"]], resize_keyboard=True)
+                )
+                context.user_data['editando_campo'] = 'descargas'
+                return MOD_VALOR
+            elif campo_key == 'transportista':
+                # Mostrar lista de conductores disponibles
+                return await self._mostrar_conductores_para_asignar(update, context)
+            
+            context.user_data['editando_campo'] = campo_key
+            valor_actual = context.user_data.get('viaje', {}).get(campo_key, '-')
+            
+            await query.message.reply_text(
+                f"✏️ *EDITAR {campo_nombre.split(' ', 1)[1].upper()}*\n\n"
+                f"Valor actual: *{valor_actual or '-'}*\n\nEscribe el nuevo valor:",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardMarkup([["⬅️ Volver", "❌ Cancelar"]], resize_keyboard=True)
+            )
+            return MOD_VALOR
+        
+        return MOD_CAMPO
+    
+    async def _mostrar_conductores_para_asignar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Muestra lista de conductores para asignar al viaje"""
+        query = update.callback_query
+        
+        # Obtener conductores de la BD
+        conductores = self._get_conductores_disponibles()
+        
+        if not conductores:
+            await query.answer("No hay conductores disponibles", show_alert=True)
+            return MOD_CAMPO
+        
+        context.user_data['conductores_lista'] = conductores
+        
+        mensaje = "🚛 *ASIGNAR CONDUCTOR*\n\nSelecciona el conductor:\n"
+        keyboard = []
+        
+        for i, c in enumerate(conductores):
+            nombre = c.get('nombre', '?')
+            ubicacion = c.get('ubicacion', '-')
+            tractora = c.get('tractora', '-')
+            
+            mensaje += f"\n• *{nombre}*\n  📍 {ubicacion} | 🚛 {tractora}\n"
+            
+            btn_text = f"{nombre[:20]}"
+            keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"asignar_{i}")])
+        
+        keyboard.append([InlineKeyboardButton("⬅️ Volver", callback_data="mod_volver_resumen")])
+        keyboard.append([InlineKeyboardButton("❌ Cancelar", callback_data="mod_cancelar")])
+        
+        await query.edit_message_text(
+            mensaje, parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        
+        return MOD_CAMPO
+    
+    def _get_conductores_disponibles(self):
+        """Obtiene conductores disponibles del Excel"""
+        conductores = []
+        try:
+            wb = openpyxl.load_workbook(self.excel_path, data_only=True)
+            ws = wb.active
+            nombres_vistos = set()
+            
+            for fila in range(3, 200):
+                nombre = ws.cell(row=fila, column=5).value
+                if not nombre or nombre in nombres_vistos:
+                    continue
+                nombres_vistos.add(nombre)
+                
+                conductor = {
+                    'nombre': str(nombre),
+                    'tractora': ws.cell(row=fila, column=7).value or '-',
+                    'ubicacion': ws.cell(row=fila, column=2).value or '-',
+                }
+                conductores.append(conductor)
+            wb.close()
+        except Exception as e:
+            logger.error(f"[GESTIONES] Error obteniendo conductores: {e}")
+        return conductores
+    
+    async def mod_asignar_conductor_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Asigna un conductor al viaje"""
+        query = update.callback_query
+        await query.answer()
+        
+        conductores = context.user_data.get('conductores_lista', [])
+        idx = int(query.data.replace("asignar_", ""))
+        
+        if idx < 0 or idx >= len(conductores):
+            await query.answer("Conductor no válido", show_alert=True)
+            return MOD_CAMPO
+        
+        conductor = conductores[idx]
+        viaje = context.user_data.get('viaje', {})
+        
+        # Guardar transportista en el viaje
+        viaje['transportista'] = conductor['nombre']
+        viaje['tractora_asignada'] = conductor.get('tractora', '')
+        context.user_data['viaje'] = viaje
+        context.user_data['conductor_asignado'] = conductor
+        
+        logger.info(f"[GESTIONES] Conductor {conductor['nombre']} asignado a viaje {viaje.get('cliente')}")
+        
+        # Volver al resumen
+        return await self._mod_mostrar_resumen_viaje_callback(update, context)
+    
+    async def mod_guardar_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Guarda cambios (callback)"""
+        query = update.callback_query
+        await query.answer()
+        
+        # Reutilizar lógica existente
+        update.message = query.message
+        return await self.mod_guardar(update, context)
+    
+    async def mod_volver_lista_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Vuelve a la lista de viajes (callback)"""
+        query = update.callback_query
+        await query.answer()
+        
+        update.message = query.message
+        return await self.mod_listar_viajes(update, context)
+    
+    async def cancelar_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Cancela desde callback"""
+        query = update.callback_query
+        await query.answer()
+        context.user_data.clear()
+        
+        await query.edit_message_text("❌ Operación cancelada.")
+        await query.message.reply_text(
+            "¿Qué más necesitas?",
+            reply_markup=teclado_admin
+        )
+        return ConversationHandler.END
+
     async def mod_elegir_campo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Elige campo a modificar"""
         campo_num = update.message.text.strip()
@@ -2099,6 +2350,7 @@ class GestionesManager:
         
         via = context.user_data.get('viaje', {})
         fila = context.user_data.get('viaje_fila')
+        conductor_asignado = context.user_data.get('conductor_asignado')
         _sync_compat(via)
         
         if not fila:
@@ -2140,6 +2392,11 @@ class GestionesManager:
             if km:
                 ws.cell(row=fila, column=24, value=int(km))
             
+            # Transportista (columna 22)
+            transportista = via.get('transportista', '')
+            if transportista:
+                ws.cell(row=fila, column=22, value=transportista)
+            
             # Observaciones
             observaciones = _generar_observaciones(via)
             ws.cell(row=fila, column=28, value=observaciones)
@@ -2154,12 +2411,18 @@ class GestionesManager:
             
             mensaje = f"✅ *¡VIAJE MODIFICADO!*\n\n"
             mensaje += f"🏢 {via.get('cliente')}\n"
-            mensaje += f"📥 Cargas ({len(cargas)}): {carga_str}\n"
-            mensaje += f"📤 Descargas ({len(descargas)}): {descarga_str}\n"
+            mensaje += f"📥 Cargas: {carga_str}\n"
+            mensaje += f"📤 Descargas: {descarga_str}\n"
+            if transportista:
+                mensaje += f"🚛 Conductor: {transportista}\n"
             mensaje += f"💰 {via.get('precio', 0):.0f}€\n\n"
             mensaje += "☁️ _Sincronizado con Drive_" if drive_ok else "⚠️ _Guardado local_"
             
             await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=teclado_admin)
+            
+            # Notificar al conductor si se asignó uno nuevo
+            if conductor_asignado and transportista:
+                await self._notificar_conductor_asignacion(via, conductor_asignado)
             
         except Exception as e:
             logger.error(f"[GESTIONES] Error guardando: {e}")
@@ -2167,6 +2430,30 @@ class GestionesManager:
         
         context.user_data.clear()
         return ConversationHandler.END
+    
+    async def _notificar_conductor_asignacion(self, viaje: dict, conductor: dict):
+        """Notifica al conductor que se le ha asignado un viaje"""
+        try:
+            from notificaciones_viajes import obtener_notificador
+            notif = obtener_notificador()
+            
+            if notif:
+                # Preparar datos para notificación
+                asignacion = {
+                    'conductor_asignado': conductor.get('nombre'),
+                    'cliente': viaje.get('cliente'),
+                    'lugar_carga': viaje.get('cargas', ['?'])[0] if viaje.get('cargas') else viaje.get('lugar_carga', '?'),
+                    'lugar_entrega': viaje.get('descargas', ['?'])[0] if viaje.get('descargas') else viaje.get('lugar_descarga', '?'),
+                    'mercancia': viaje.get('mercancia', '-'),
+                    'km': viaje.get('km', 0),
+                    'intercambio': viaje.get('intercambio', 'NO'),
+                }
+                
+                # Usar verificar_y_notificar que detectará el nuevo viaje
+                await notif.verificar_y_notificar()
+                logger.info(f"[GESTIONES] Notificación enviada a {conductor.get('nombre')}")
+        except Exception as e:
+            logger.warning(f"[GESTIONES] Error notificando conductor: {e}")
 
     # ============================================================
     # MODIFICAR CAMIONERO EXISTENTE
