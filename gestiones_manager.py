@@ -1,19 +1,18 @@
 """
-GESTIONES - CAMIONEROS Y VIAJES (v2.4 - BOTONES INLINE + ASIGNAR CONDUCTOR)
+GESTIONES - CAMIONEROS Y VIAJES (v2.5 - BOTONES INLINE + ASIGNAR CONDUCTOR)
 ===============================================================
 Sistema completo para añadir y modificar camioneros y viajes.
+
+CAMBIOS v2.5:
+- Solo muestra conductores SIN viaje asignado al asignar
+- Sincroniza BD después de guardar
+- Handler Modificar viaje ACTIVO
 
 CAMBIOS v2.4:
 - Lista de viajes con botones inline
 - Campos editables con botones
 - Nuevo campo "Asignar Conductor" con lista de conductores
 - Notificación automática al conductor cuando se le asigna viaje
-
-CAMBIOS v2.3:
-- FIX: _get_viajes_sin_asignar usaba columna 5 (conductor) en vez de 22 (transportista viaje)
-
-CAMBIOS v2.2:
-- DESACTIVADO handler "✏️ Modificar viaje" → usar modificador_viajes_pendientes.py
 
 CAMBIOS v2.1:
 - Mejorado formato de lista de viajes (similar a modificar en ruta)
@@ -286,7 +285,7 @@ class GestionesManager:
                 MessageHandler(filters.Regex("^➕ Añadir camionero$"), self.inicio_añadir_conductor),
                 MessageHandler(filters.Regex("^✏️ Modificar camionero$"), self.inicio_modificar_conductor),
                 MessageHandler(filters.Regex("^➕ Añadir viaje$"), self.inicio_añadir_viaje),
-                MessageHandler(filters.Regex("^✏️ Modificar viaje$"), self.inicio_modificar_viaje),  # DESACTIVADO
+                MessageHandler(filters.Regex("^✏️ Modificar viaje$"), self.inicio_modificar_viaje),
                 MessageHandler(filters.Regex("^🔄 Sincronizar$"), self.sincronizar_drive),
             ],
             states={
@@ -2173,26 +2172,47 @@ class GestionesManager:
         return MOD_CAMPO
     
     def _get_conductores_disponibles(self):
-        """Obtiene conductores disponibles del Excel"""
+        """Obtiene conductores SIN viaje asignado del Excel"""
         conductores = []
+        conductores_con_viaje = set()
+        
         try:
             wb = openpyxl.load_workbook(self.excel_path, data_only=True)
             ws = wb.active
+            
+            # Primero, obtener todos los conductores que YA tienen viaje asignado
+            for fila in range(3, 200):
+                transportista = ws.cell(row=fila, column=22).value
+                if transportista and str(transportista).strip():
+                    conductores_con_viaje.add(str(transportista).strip().upper())
+            
+            # Ahora obtener conductores únicos que NO están en la lista de asignados
             nombres_vistos = set()
             
             for fila in range(3, 200):
                 nombre = ws.cell(row=fila, column=5).value
-                if not nombre or nombre in nombres_vistos:
+                if not nombre:
                     continue
-                nombres_vistos.add(nombre)
+                    
+                nombre_str = str(nombre).strip()
+                nombre_upper = nombre_str.upper()
+                
+                # Saltar si ya vimos este conductor o si tiene viaje asignado
+                if nombre_upper in nombres_vistos or nombre_upper in conductores_con_viaje:
+                    continue
+                    
+                nombres_vistos.add(nombre_upper)
                 
                 conductor = {
-                    'nombre': str(nombre),
+                    'nombre': nombre_str,
                     'tractora': ws.cell(row=fila, column=7).value or '-',
                     'ubicacion': ws.cell(row=fila, column=2).value or '-',
                 }
                 conductores.append(conductor)
             wb.close()
+            
+            logger.info(f"[GESTIONES] Conductores disponibles: {len(conductores)} (con viaje: {len(conductores_con_viaje)})")
+            
         except Exception as e:
             logger.error(f"[GESTIONES] Error obteniendo conductores: {e}")
         return conductores
@@ -2342,7 +2362,7 @@ class GestionesManager:
         return await self.mod_listar_viajes(update, context)
     
     async def mod_guardar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Guarda cambios del viaje/camionero modificado en Excel"""
+        """Guarda cambios del viaje/camionero modificado en Excel y sincroniza"""
         tipo = context.user_data.get('tipo', 'viaje')
         
         if tipo == 'camionero':
@@ -2370,7 +2390,6 @@ class GestionesManager:
             cargas = via.get('cargas', [])
             if cargas:
                 ws.cell(row=fila, column=14, value=cargas[0])
-                # Limpiar comentario anterior
                 ws.cell(row=fila, column=14).comment = None
                 if len(cargas) > 1:
                     ws.cell(row=fila, column=14).comment = Comment(_generar_comentario_cargas(cargas), "Bot")
@@ -2404,7 +2423,14 @@ class GestionesManager:
             wb.save(self.excel_path)
             wb.close()
             
+            logger.info(f"[GESTIONES] Excel guardado fila {fila}")
+            
+            # Sincronizar con Drive INMEDIATAMENTE
             drive_ok = self._sync_to_drive()
+            logger.info(f"[GESTIONES] Drive sync: {'OK' if drive_ok else 'FAILED'}")
+            
+            # Sincronizar BD si hay separador disponible
+            bd_ok = await self._sync_bd()
             
             carga_str = ", ".join(cargas) if cargas else "-"
             descarga_str = ", ".join(descargas) if descargas else "-"
@@ -2416,7 +2442,13 @@ class GestionesManager:
             if transportista:
                 mensaje += f"🚛 Conductor: {transportista}\n"
             mensaje += f"💰 {via.get('precio', 0):.0f}€\n\n"
-            mensaje += "☁️ _Sincronizado con Drive_" if drive_ok else "⚠️ _Guardado local_"
+            
+            if drive_ok and bd_ok:
+                mensaje += "☁️ _Sincronizado con Drive y BD_"
+            elif drive_ok:
+                mensaje += "☁️ _Sincronizado con Drive_"
+            else:
+                mensaje += "⚠️ _Guardado local (error sincronizando)_"
             
             await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=teclado_admin)
             
@@ -2430,6 +2462,18 @@ class GestionesManager:
         
         context.user_data.clear()
         return ConversationHandler.END
+    
+    async def _sync_bd(self):
+        """Sincroniza la BD con el Excel usando el separador"""
+        try:
+            from separador_excel_empresa import SeparadorExcelEmpresa
+            separador = SeparadorExcelEmpresa(self.excel_path, self.db_path if hasattr(self, 'db_path') else 'logistica.db')
+            resultado = separador.procesar()
+            logger.info(f"[GESTIONES] BD sincronizada: {resultado.get('viajes', 0)} viajes")
+            return True
+        except Exception as e:
+            logger.warning(f"[GESTIONES] Error sincronizando BD: {e}")
+            return False
     
     async def _notificar_conductor_asignacion(self, viaje: dict, conductor: dict):
         """Notifica al conductor que se le ha asignado un viaje"""
