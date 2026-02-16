@@ -1,16 +1,16 @@
 """
-GESTIONES - CAMIONEROS Y VIAJES (v2.6 - FIX CALLBACKS)
+GESTIONES - CAMIONEROS Y VIAJES (v2.7 - MERCANCIA TEXTO + PALES)
 ===============================================================
 Sistema completo para añadir y modificar camioneros y viajes.
+
+CAMBIOS v2.7:
+- Mercancía: texto libre en lugar de botones preestablecidos
+- Intercambio SI: pide número de palés (se guarda en columna 13)
+- Resumen muestra cantidad de palés cuando hay intercambio
 
 CAMBIOS v2.6:
 - FIX: Callbacks no pueden asignar update.message (error PTB v20+)
 - mod_guardar_callback y mod_volver_lista_callback reescritos
-
-CAMBIOS v2.5:
-- Solo muestra conductores SIN viaje asignado al asignar
-- Sincroniza BD después de guardar
-- Handler Modificar viaje ACTIVO
 
 CAMBIOS v2.1:
 - Mejorado formato de lista de viajes (similar a modificar en ruta)
@@ -112,18 +112,19 @@ VIA_CLIENTE = 21
 VIA_NUM_PEDIDO = 22
 VIA_REF_CLIENTE = 23
 VIA_INTERCAMBIO = 24
-VIA_LUGAR_CARGA = 25
-VIA_CARGA_ADICIONAL = 26       # ¿Añadir otra carga? (loop)
-VIA_CARGA_ADICIONAL_LUGAR = 27  # Escribir nueva carga
-VIA_LUGAR_DESCARGA = 28
-VIA_DESCARGA_ADICIONAL = 29     # ¿Añadir otra descarga? (loop)
-VIA_DESCARGA_ADICIONAL_LUGAR = 30  # Escribir nueva descarga
-VIA_MERCANCIA = 31
-VIA_KM = 32
-VIA_PRECIO = 33
-VIA_CONFIRMAR = 34
-VIA_EDITAR_CAMPO = 35
-VIA_EDITAR_VALOR = 36
+VIA_NUM_PALES = 25  # Número de palés (solo si intercambio=SI)
+VIA_LUGAR_CARGA = 26
+VIA_CARGA_ADICIONAL = 27       # ¿Añadir otra carga? (loop)
+VIA_CARGA_ADICIONAL_LUGAR = 28  # Escribir nueva carga
+VIA_LUGAR_DESCARGA = 29
+VIA_DESCARGA_ADICIONAL = 30     # ¿Añadir otra descarga? (loop)
+VIA_DESCARGA_ADICIONAL_LUGAR = 31  # Escribir nueva descarga
+VIA_MERCANCIA = 32
+VIA_KM = 33
+VIA_PRECIO = 34
+VIA_CONFIRMAR = 35
+VIA_EDITAR_CAMPO = 36
+VIA_EDITAR_VALOR = 37
 
 # Modificar existente
 MOD_ELEGIR_VIAJE = 40
@@ -364,9 +365,14 @@ class GestionesManager:
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_ref_cliente),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_intercambio),
                 ],
+                VIA_NUM_PALES: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
+                    MessageHandler(filters.Regex("^⬅️ Volver$"), self._pedir_intercambio),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_num_pales),
+                ],
                 VIA_LUGAR_CARGA: [
                     MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
-                    MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_intercambio),
+                    MessageHandler(filters.Regex("^⬅️ Volver$"), self.via_volver_a_intercambio_o_pales),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.via_lugar_carga),
                 ],
                 VIA_CARGA_ADICIONAL: [
@@ -950,7 +956,7 @@ class GestionesManager:
     async def _pedir_intercambio(self, update, context):
         keyboard = [["✅ SÍ", "❌ NO"], ["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
-            "📦 *NUEVO VIAJE*\n\nPaso 5/10\n\n🔄 *¿Intercambio?*",
+            "📦 *NUEVO VIAJE*\n\nPaso 5/10\n\n🔄 *¿Intercambio de palés?*",
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
@@ -960,9 +966,44 @@ class GestionesManager:
         texto = update.message.text.upper()
         if "SÍ" in texto or "SI" in texto:
             context.user_data['viaje']['intercambio'] = "SI"
+            # Pedir número de palés
+            return await self._pedir_num_pales(update, context)
         else:
             context.user_data['viaje']['intercambio'] = "NO"
-        return await self._pedir_lugar_carga(update, context)
+            context.user_data['viaje']['num_pales'] = 0
+            return await self._pedir_lugar_carga(update, context)
+    
+    async def _pedir_num_pales(self, update, context):
+        """Pide el número de palés cuando hay intercambio"""
+        keyboard = [["⬅️ Volver", "❌ Cancelar"]]
+        await update.message.reply_text(
+            "📦 *NUEVO VIAJE*\n\n📦 *¿Cuántos palés?*\n\n_Ejemplo: 33_",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
+        return VIA_NUM_PALES
+    
+    async def via_num_pales(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Recibe el número de palés"""
+        texto = update.message.text.strip()
+        
+        try:
+            num = int(texto)
+            if num < 1 or num > 100:
+                await update.message.reply_text("⚠️ Introduce un número entre 1 y 100:")
+                return VIA_NUM_PALES
+            context.user_data['viaje']['num_pales'] = num
+            return await self._pedir_lugar_carga(update, context)
+        except ValueError:
+            await update.message.reply_text("⚠️ Introduce un número válido (ej: 33):")
+            return VIA_NUM_PALES
+    
+    async def via_volver_a_intercambio_o_pales(self, update, context):
+        """Vuelve a intercambio o num_pales según corresponda"""
+        if context.user_data.get('viaje', {}).get('intercambio') == "SI":
+            return await self._pedir_num_pales(update, context)
+        else:
+            return await self._pedir_intercambio(update, context)
     
     # ============================================================
     # CARGAS - FLUJO CON LOOP (hasta 10)
@@ -1190,24 +1231,20 @@ class GestionesManager:
     # ============================================================
     
     async def _pedir_mercancia(self, update, context):
-        keyboard = [
-            ["REFRIGERADO +2º", "CONGELADO -18º"],
-            ["REFRIGERADO +5º", "SECO"],
-            ["⬅️ Volver", "❌ Cancelar"]
-        ]
+        keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
-            "📦 *NUEVO VIAJE*\n\nPaso 8/10\n\n📦 *¿Mercancía?*",
+            "📦 *NUEVO VIAJE*\n\nPaso 8/10\n\n📦 *¿Tipo de mercancía?*\n\n_Ejemplo: REFRIGERADO +2º, CONGELADO -18º, SECO, etc._",
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
         return VIA_MERCANCIA
     
     async def via_mercancia(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        resultado = validar_mercancia(update.message.text)
-        if not resultado['valido']:
-            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
+        texto = update.message.text.strip()
+        if len(texto) < 2:
+            await update.message.reply_text("⚠️ Escribe el tipo de mercancía:", parse_mode="Markdown")
             return VIA_MERCANCIA
-        context.user_data['viaje']['mercancia'] = resultado['valor']
+        context.user_data['viaje']['mercancia'] = texto.upper()
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
             "📦 *NUEVO VIAJE*\n\nPaso 9/10\n\n📏 *¿Kilómetros?*\n\n_Ejemplo: 450_",
@@ -1293,7 +1330,12 @@ class GestionesManager:
         resumen += f"2. 🏢 Cliente: *{via.get('cliente', '')}*\n"
         resumen += f"3. 🔢 Nº Pedido: *{via.get('num_pedido', '-')}*\n"
         resumen += f"4. 🏷️ Ref. Cliente: *{via.get('ref_cliente', '-')}*\n"
-        resumen += f"5. 🔄 Intercambio: *{via.get('intercambio', 'NO')}*\n"
+        intercambio = via.get('intercambio', 'NO')
+        num_pales = via.get('num_pales', 0)
+        if intercambio == 'SI' and num_pales:
+            resumen += f"5. 🔄 Intercambio: *{intercambio}* ({num_pales} palés)\n"
+        else:
+            resumen += f"5. 🔄 Intercambio: *{intercambio}*\n"
         
         # Cargas
         resumen += f"6. 📍 Cargas ({len(cargas)}):\n"
@@ -1425,6 +1467,9 @@ class GestionesManager:
             if via.get('ref_cliente'):
                 ws.cell(row=fila, column=11, value=via['ref_cliente'])
             ws.cell(row=fila, column=12, value=via.get('intercambio', 'NO'))
+            # Nº de palés (columna 13)
+            if via.get('num_pales'):
+                ws.cell(row=fila, column=13, value=via.get('num_pales'))
             
             # Lugar de carga (1ª carga en columna 14)
             cargas = via.get('cargas', [])
@@ -1818,6 +1863,7 @@ class GestionesManager:
                     'num_pedido': ws.cell(row=fila, column=10).value,
                     'ref_cliente': ws.cell(row=fila, column=11).value,
                     'intercambio': ws.cell(row=fila, column=12).value or 'NO',
+                    'num_pales': ws.cell(row=fila, column=13).value or 0,
                     'lugar_carga': ws.cell(row=fila, column=14).value or '',
                     'lugar_descarga': ws.cell(row=fila, column=17).value or '',
                     'mercancia': ws.cell(row=fila, column=20).value,
@@ -1987,7 +2033,12 @@ class GestionesManager:
         mensaje += f"🏢 Cliente: *{via.get('cliente', '-')}*\n"
         mensaje += f"🔢 Nº Pedido: *{via.get('num_pedido', '-') or '-'}*\n"
         mensaje += f"🏷️ Ref. Cliente: *{via.get('ref_cliente', '-') or '-'}*\n"
-        mensaje += f"🔄 Intercambio: *{via.get('intercambio', 'NO')}*\n"
+        intercambio = via.get('intercambio', 'NO')
+        num_pales = via.get('num_pales', 0)
+        if intercambio == 'SI' and num_pales:
+            mensaje += f"🔄 Intercambio: *{intercambio}* ({num_pales} palés)\n"
+        else:
+            mensaje += f"🔄 Intercambio: *{intercambio}*\n"
         
         # Cargas
         mensaje += f"📥 Cargas ({len(cargas)}):"
@@ -2276,6 +2327,9 @@ class GestionesManager:
             ws.cell(row=fila, column=10, value=via.get('num_pedido'))
             ws.cell(row=fila, column=11, value=via.get('ref_cliente'))
             ws.cell(row=fila, column=12, value=via.get('intercambio', 'NO'))
+            # Nº de palés (columna 13)
+            if via.get("num_pales"):
+                ws.cell(row=fila, column=13, value=via.get("num_pales"))
             
             # Cargas
             cargas = via.get('cargas', [])
@@ -2517,6 +2571,9 @@ class GestionesManager:
             ws.cell(row=fila, column=10, value=via.get('num_pedido'))
             ws.cell(row=fila, column=11, value=via.get('ref_cliente'))
             ws.cell(row=fila, column=12, value=via.get('intercambio', 'NO'))
+            # Nº de palés (columna 13)
+            if via.get('num_pales'):
+                ws.cell(row=fila, column=13, value=via.get('num_pales'))
             
             # Cargas
             cargas = via.get('cargas', [])
