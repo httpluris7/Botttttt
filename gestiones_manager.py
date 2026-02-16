@@ -1,16 +1,17 @@
 """
-GESTIONES - CAMIONEROS Y VIAJES (v2.7 - MERCANCIA TEXTO + PALES)
+GESTIONES - CAMIONEROS Y VIAJES (v2.8 - KM AUTOMÁTICO + SIN ZONA OBS)
 ===============================================================
 Sistema completo para añadir y modificar camioneros y viajes.
+
+CAMBIOS v2.8:
+- KM calculados automáticamente (distancia línea recta × 1.3)
+- Observaciones ya no incluyen "ZONA: ..."
+- Admin puede confirmar KM calculados o escribir otro valor
 
 CAMBIOS v2.7:
 - Mercancía: texto libre en lugar de botones preestablecidos
 - Intercambio SI: pide número de palés (se guarda en columna 13)
 - Resumen muestra cantidad de palés cuando hay intercambio
-
-CAMBIOS v2.6:
-- FIX: Callbacks no pueden asignar update.message (error PTB v20+)
-- mod_guardar_callback y mod_volver_lista_callback reescritos
 
 CAMBIOS v2.1:
 - Mejorado formato de lista de viajes (similar a modificar en ruta)
@@ -24,6 +25,7 @@ CAMBIOS v2.0:
 """
 
 import logging
+import math
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ContextTypes, 
@@ -60,6 +62,126 @@ from validaciones import (
 # ============================================================
 MAX_CARGAS = 10
 MAX_DESCARGAS = 10
+
+# Coordenadas de ciudades para cálculo de KM
+COORDENADAS_CIUDADES = {
+    "AZAGRA": (42.3167, -1.8833),
+    "MELIDA": (42.3833, -1.5500),
+    "MÉLIDA": (42.3833, -1.5500),
+    "TUDELA": (42.0617, -1.6067),
+    "PAMPLONA": (42.8125, -1.6458),
+    "SAN ADRIAN": (42.3417, -1.9333),
+    "CALAHORRA": (42.3050, -1.9653),
+    "LOGROÑO": (42.4650, -2.4456),
+    "ALFARO": (42.1833, -1.7500),
+    "ARNEDO": (42.2167, -2.1000),
+    "AUTOL": (42.2167, -2.0000),
+    "QUEL": (42.2333, -2.0500),
+    "LODOSA": (42.4333, -2.0833),
+    "MENDAVIA": (42.4333, -2.2000),
+    "PERALTA": (42.3333, -1.8000),
+    "ZARAGOZA": (41.6488, -0.8891),
+    "BARCELONA": (41.3851, 2.1734),
+    "MADRID": (40.4168, -3.7038),
+    "MERCAMADRID": (40.3833, -3.6500),
+    "VALENCIA": (39.4699, -0.3763),
+    "BILBAO": (43.2630, -2.9350),
+    "VITORIA": (42.8467, -2.6728),
+    "SANTANDER": (43.4623, -3.8100),
+    "OVIEDO": (43.3614, -5.8494),
+    "GIJON": (43.5453, -5.6615),
+    "SEVILLA": (37.3891, -5.9845),
+    "MALAGA": (36.7213, -4.4214),
+    "MERIDA": (38.9161, -6.3436),
+    "MÉRIDA": (38.9161, -6.3436),
+    "BADAJOZ": (38.8794, -6.9706),
+    "VALLADOLID": (41.6523, -4.7245),
+    "BURGOS": (42.3439, -3.6969),
+    "LEON": (42.5987, -5.5671),
+    "VIGO": (42.2314, -8.7124),
+    "CORUÑA": (43.3713, -8.3960),
+    "A CORUÑA": (43.3713, -8.3960),
+    "MURCIA": (37.9922, -1.1307),
+    "ALICANTE": (38.3452, -0.4815),
+    "GRANADA": (37.1773, -3.5986),
+    "CORDOBA": (37.8882, -4.7794),
+    "CÓRDOBA": (37.8882, -4.7794),
+    "LLEIDA": (41.6176, 0.6200),
+    "TARRAGONA": (41.1189, 1.2445),
+    "GUADALAJARA": (40.6337, -3.1667),
+    "TOLEDO": (39.8628, -4.0273),
+    "SALAMANCA": (40.9701, -5.6635),
+    "SORIA": (41.7636, -2.4649),
+    "ALBACETE": (38.9942, -1.8585),
+    "ALMERIA": (36.8340, -2.4637),
+    "ALMERÍA": (36.8340, -2.4637),
+    "CADIZ": (36.5271, -6.2886),
+    "CÁDIZ": (36.5271, -6.2886),
+    "HUELVA": (37.2614, -6.9447),
+    "JAEN": (37.7796, -3.7849),
+    "JAÉN": (37.7796, -3.7849),
+    "CASTELLON": (39.9864, -0.0513),
+    "CASTELLÓN": (39.9864, -0.0513),
+    "GIRONA": (41.9794, 2.8214),
+    "HUESCA": (42.1401, -0.4089),
+    "TERUEL": (40.3456, -1.1065),
+    "AVILA": (40.6566, -4.6818),
+    "ÁVILA": (40.6566, -4.6818),
+    "CACERES": (39.4753, -6.3724),
+    "CÁCERES": (39.4753, -6.3724),
+    "CIUDAD REAL": (38.9848, -3.9274),
+    "CUENCA": (40.0704, -2.1374),
+    "PALENCIA": (42.0096, -4.5288),
+    "SEGOVIA": (40.9429, -4.1088),
+    "ZAMORA": (41.5034, -5.7467),
+    "OURENSE": (42.3364, -7.8639),
+    "PONTEVEDRA": (42.4310, -8.6446),
+    "LUGO": (43.0097, -7.5567),
+    "DONOSTIA": (43.3183, -1.9812),
+    "SAN SEBASTIAN": (43.3183, -1.9812),
+}
+
+def _obtener_coords(lugar: str):
+    """Obtiene coordenadas de un lugar"""
+    if not lugar:
+        return None, None
+    lugar_upper = lugar.upper().strip()
+    
+    # Búsqueda exacta
+    if lugar_upper in COORDENADAS_CIUDADES:
+        return COORDENADAS_CIUDADES[lugar_upper]
+    
+    # Búsqueda parcial
+    for nombre, coords in COORDENADAS_CIUDADES.items():
+        if nombre in lugar_upper or lugar_upper in nombre:
+            return coords
+    
+    return None, None
+
+def _calcular_distancia_linea_recta(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calcula distancia en km usando Haversine"""
+    if not all([lat1, lon1, lat2, lon2]):
+        return 0
+    R = 6371  # Radio de la Tierra en km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+def _calcular_km_aproximado(origen: str, destino: str) -> int:
+    """
+    Calcula KM aproximados entre origen y destino.
+    Usa distancia en línea recta × 1.3 (factor de carretera)
+    """
+    lat1, lon1 = _obtener_coords(origen)
+    lat2, lon2 = _obtener_coords(destino)
+    
+    if not lat1 or not lat2:
+        return 0
+    
+    distancia_recta = _calcular_distancia_linea_recta(lat1, lon1, lat2, lon2)
+    # Factor 1.3 para aproximar distancia por carretera
+    return int(distancia_recta * 1.3)
 
 def interpretar_texto(texto: str) -> dict:
     """Interpreta texto libre del usuario"""
@@ -199,10 +321,9 @@ def _formatear_lista_cargas(cargas: list, tipo: str = "carga") -> str:
 
 
 def _generar_observaciones(viaje: dict) -> str:
-    """Genera string de observaciones con todas las cargas/descargas"""
+    """Genera string de observaciones con cargas/descargas adicionales"""
     partes = []
-    if viaje.get('zona'):
-        partes.append(f"ZONA: {viaje['zona']}")
+    # Ya no incluimos ZONA en observaciones
     
     cargas = viaje.get('cargas', [])
     for i, c in enumerate(cargas[1:], 2):  # Desde la 2ª
@@ -1245,20 +1366,62 @@ class GestionesManager:
             await update.message.reply_text("⚠️ Escribe el tipo de mercancía:", parse_mode="Markdown")
             return VIA_MERCANCIA
         context.user_data['viaje']['mercancia'] = texto.upper()
-        keyboard = [["⬅️ Volver", "❌ Cancelar"]]
-        await update.message.reply_text(
-            "📦 *NUEVO VIAJE*\n\nPaso 9/10\n\n📏 *¿Kilómetros?*\n\n_Ejemplo: 450_",
-            parse_mode="Markdown",
-            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        )
+        
+        # Calcular KM automáticamente
+        viaje = context.user_data['viaje']
+        cargas = viaje.get('cargas', [])
+        descargas = viaje.get('descargas', [])
+        
+        km_calculados = 0
+        origen = cargas[0] if cargas else None
+        destino = descargas[-1] if descargas else None  # Última descarga
+        
+        if origen and destino:
+            km_calculados = _calcular_km_aproximado(origen, destino)
+        
+        viaje['km'] = km_calculados
+        context.user_data['km_calculados'] = km_calculados
+        
+        if km_calculados > 0:
+            keyboard = [["✅ Confirmar"], ["⬅️ Volver", "❌ Cancelar"]]
+            await update.message.reply_text(
+                f"📦 *NUEVO VIAJE*\n\nPaso 9/10\n\n"
+                f"📏 *Kilómetros calculados:* `{km_calculados} km`\n"
+                f"_({origen} → {destino})_\n\n"
+                f"Pulsa *✅ Confirmar* o escribe otro valor:",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            )
+        else:
+            keyboard = [["⬅️ Volver", "❌ Cancelar"]]
+            await update.message.reply_text(
+                f"📦 *NUEVO VIAJE*\n\nPaso 9/10\n\n"
+                f"📏 *¿Kilómetros?*\n\n"
+                f"_No se pudo calcular automáticamente_\n"
+                f"Escribe los km:",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            )
         return VIA_KM
     
     async def via_km(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        resultado = validar_km(update.message.text)
-        if not resultado['valido']:
-            await update.message.reply_text(resultado['error'], parse_mode="Markdown")
-            return VIA_KM
-        context.user_data['viaje']['km'] = resultado['valor']
+        texto = update.message.text.strip()
+        
+        # Si confirma los KM calculados
+        if "CONFIRMAR" in texto.upper() or "✅" in texto:
+            km = context.user_data.get('km_calculados', 0)
+            if km > 0:
+                context.user_data['viaje']['km'] = km
+            else:
+                await update.message.reply_text("⚠️ No hay KM calculados. Escribe los km:")
+                return VIA_KM
+        else:
+            resultado = validar_km(texto)
+            if not resultado['valido']:
+                await update.message.reply_text(resultado['error'], parse_mode="Markdown")
+                return VIA_KM
+            context.user_data['viaje']['km'] = resultado['valor']
+        
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
             "📦 *NUEVO VIAJE*\n\nPaso 10/10\n\n💰 *¿Precio (€)?*\n\n_Ejemplo: 850_",
