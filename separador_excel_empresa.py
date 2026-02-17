@@ -1,7 +1,11 @@
 """
-SEPARADOR DE EXCEL DE EMPRESA v2.2
+SEPARADOR DE EXCEL DE EMPRESA v2.3
 ===================================
 Lee PRUEBO.xlsx (formato de la empresa) y lo separa en tablas internas.
+
+CAMBIOS v2.3:
+- Preserva fechas/horas del lector de emails durante sync
+- Preserva email_origen durante sync
 
 CAMBIOS v2.2:
 - FIX Bug CRÍTICO: conductor_asignado leía columna E (nombre conductor) 
@@ -329,16 +333,22 @@ class SeparadorExcelEmpresa:
         logger.info(f"[SEPARADOR] Preservados datos de {len(datos_preservados)} conductores")
         return datos_preservados
     
-    def _preservar_estados_viajes(self, cursor) -> Dict[str, str]:
+    def _preservar_estados_viajes(self, cursor) -> Dict[str, Dict]:
         """
-        BUGFIX #2: Guarda estado de viajes antes de borrar.
-        Returns: Dict {clave_viaje: estado}
+        BUGFIX #2: Guarda estado y fechas de viajes antes de borrar.
+        Returns: Dict {clave_viaje: {estado, fecha_carga, hora_carga, ...}}
         """
-        estados_preservados = {}
+        datos_preservados = {}
         cursor.execute("""
-            SELECT cliente, lugar_carga, lugar_entrega, conductor_asignado, estado 
+            SELECT cliente, lugar_carga, lugar_entrega, conductor_asignado, estado,
+                   fecha_carga, hora_carga, fecha_descarga, hora_descarga, email_origen
             FROM viajes_empresa 
-            WHERE estado IS NOT NULL AND estado != 'pendiente'
+            WHERE (estado IS NOT NULL AND estado != 'pendiente')
+               OR fecha_carga IS NOT NULL 
+               OR hora_carga IS NOT NULL
+               OR fecha_descarga IS NOT NULL
+               OR hora_descarga IS NOT NULL
+               OR email_origen IS NOT NULL
         """)
         for row in cursor.fetchall():
             cliente = (row[0] or "").upper().strip()
@@ -346,9 +356,16 @@ class SeparadorExcelEmpresa:
             entrega = (row[2] or "").upper().strip()
             conductor = (row[3] or "").upper().strip()
             clave = f"{cliente}|{carga}|{entrega}|{conductor}"
-            estados_preservados[clave] = row[4]
-        logger.info(f"[SEPARADOR] Preservados estados de {len(estados_preservados)} viajes")
-        return estados_preservados
+            datos_preservados[clave] = {
+                'estado': row[4],
+                'fecha_carga': row[5],
+                'hora_carga': row[6],
+                'fecha_descarga': row[7],
+                'hora_descarga': row[8],
+                'email_origen': row[9]
+            }
+        logger.info(f"[SEPARADOR] Preservados datos de {len(datos_preservados)} viajes")
+        return datos_preservados
     
     def _restaurar_datos_conductores(self, cursor, datos_preservados: Dict[str, Dict]):
         """BUGFIX #1: Restaura telegram_id y telefono después de insertar"""
@@ -363,24 +380,37 @@ class SeparadorExcelEmpresa:
                 restaurados += 1
         logger.info(f"[SEPARADOR] Restaurados datos de {restaurados} conductores")
     
-    def _restaurar_estados_viajes(self, cursor, estados_preservados: Dict[str, str]):
-        """BUGFIX #2: Restaura estados de viajes después de insertar"""
+    def _restaurar_estados_viajes(self, cursor, datos_preservados: Dict[str, Dict]):
+        """BUGFIX #2: Restaura estados y fechas de viajes después de insertar"""
         restaurados = 0
-        for clave, estado in estados_preservados.items():
+        for clave, datos in datos_preservados.items():
             partes = clave.split("|")
             if len(partes) == 4:
                 cliente, carga, entrega, conductor = partes
                 cursor.execute("""
                     UPDATE viajes_empresa 
-                    SET estado = ?
+                    SET estado = COALESCE(?, estado),
+                        fecha_carga = COALESCE(?, fecha_carga),
+                        hora_carga = COALESCE(?, hora_carga),
+                        fecha_descarga = COALESCE(?, fecha_descarga),
+                        hora_descarga = COALESCE(?, hora_descarga),
+                        email_origen = COALESCE(?, email_origen)
                     WHERE UPPER(TRIM(cliente)) = ? 
                     AND UPPER(TRIM(lugar_carga)) = ?
                     AND UPPER(TRIM(lugar_entrega)) = ?
-                    AND UPPER(TRIM(conductor_asignado)) = ?
-                """, (estado, cliente, carga, entrega, conductor))
+                    AND UPPER(TRIM(COALESCE(conductor_asignado, ''))) = ?
+                """, (
+                    datos.get('estado'),
+                    datos.get('fecha_carga'),
+                    datos.get('hora_carga'),
+                    datos.get('fecha_descarga'),
+                    datos.get('hora_descarga'),
+                    datos.get('email_origen'),
+                    cliente, carga, entrega, conductor
+                ))
                 if cursor.rowcount > 0:
                     restaurados += 1
-        logger.info(f"[SEPARADOR] Restaurados estados de {restaurados} viajes")
+        logger.info(f"[SEPARADOR] Restaurados datos de {restaurados} viajes")
     
     def guardar_en_bd(self, conductores: List[Dict], viajes: List[Dict], 
                       vehiculos: List[Dict], archivo: str, hash_archivo: str):
