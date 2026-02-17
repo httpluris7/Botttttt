@@ -170,14 +170,19 @@ Responde SOLO con el JSON válido, sin explicaciones ni markdown."""
     
     def _actualizar_viaje_bd(self, viaje: Dict, fila_excel: int) -> bool:
         """Actualiza el viaje en la BD con fechas/horas"""
+        logger.info(f"[BD] Intentando actualizar viaje fila {fila_excel}, db_path={self.db_path}")
+        
         if not self.db_path or not Path(self.db_path).exists():
+            logger.error(f"[BD] db_path no existe: {self.db_path}")
             return False
         
         try:
+            logger.info(f"[BD] Conectando a {self.db_path}")
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
             # Buscar viaje por fila_excel
+            logger.info(f"[BD] UPDATE fila_excel={fila_excel}, fecha_carga={viaje.get('fecha_carga')}")
             cursor.execute("""
                 UPDATE viajes_empresa 
                 SET fecha_carga = ?,
@@ -195,8 +200,11 @@ Responde SOLO con el JSON válido, sin explicaciones ni markdown."""
                 fila_excel
             ))
             
+            logger.info(f"[BD] UPDATE afectó {cursor.rowcount} filas")
+            
             # Si no existe, insertar nuevo registro con datos básicos
             if cursor.rowcount == 0:
+                logger.info(f"[BD] No existe, insertando nuevo registro")
                 cursor.execute("""
                     INSERT INTO viajes_empresa (
                         cliente, num_pedido, ref_cliente, lugar_carga, lugar_entrega,
@@ -224,7 +232,7 @@ Responde SOLO con el JSON válido, sin explicaciones ni markdown."""
             
             conn.commit()
             conn.close()
-            logger.info(f"[BD] Viaje actualizado/insertado (fila {fila_excel})")
+            logger.info(f"[BD] ✅ Viaje actualizado/insertado (fila {fila_excel})")
             return True
         except Exception as e:
             logger.error(f"[BD] Error actualizando viaje: {e}")
