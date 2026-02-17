@@ -1,5 +1,5 @@
 """
-BOT DE TELEGRAM - TRANSPORTE v2.1
+BOT DE TELEGRAM - TRANSPORTE v2.2
 ==================================
 Bot único con 2 PERFILES:
 
@@ -10,7 +10,7 @@ Bot único con 2 PERFILES:
    - Puede asignar viajes
    - Vehículos cercanos a puntos
    - Estadísticas
-   - 📋 Consultar rutas de conductores (NUEVO)
+   - 📋 Consultar rutas de conductores
 
 🚛 CAMIONERO:
    - Solo ve SUS datos
@@ -21,11 +21,10 @@ Bot único con 2 PERFILES:
 
 El perfil se detecta automáticamente por TELEGRAM_ID en .env
 
-CAMBIOS v2.1:
-- Añadido "Consultar rutas" para admin
-- Eliminado botón Clima (comando /clima sigue disponible)
-- Gasolineras ordenadas por cercanía
-- Encadenamiento inteligente de viajes
+CAMBIOS v2.2:
+- Lector automático de emails de viajes
+- Notifica a admins cuando llega viaje por email
+- Integración completa con Drive
 """
 
 import urllib.parse
@@ -50,6 +49,9 @@ from movildata_api import MovildataAPI
 from apis_externas import obtener_gasolineras, obtener_trafico
 from inteligencia_dual import InteligenciaDual
 
+# Lector de emails de viajes
+from lector_emails_viajes import LectorEmailsViajes, crear_job_lector_emails
+
 # Google Drive
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -67,7 +69,6 @@ from gestiones_manager import GestionesManager
 from modificador_viajes_ruta import ModificadorViajesRuta
 from registros_conductor import crear_registros_conductor
 from incidencias_conductor import crear_incidencias_conductor
-from albaranes_conductor import crear_albaranes_conductor
 from cierre_dia import crear_cierre_dia
 from cierre_dia_handler import crear_cierre_handler
 from conductores_panel import crear_conductores_panel
@@ -302,6 +303,14 @@ class Config:
     # APIs externas
     OPENWEATHER_API_KEY: str = ""
     TOMTOM_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
+    
+    # Lector de emails
+    EMAIL_VIAJES_ENABLED: bool = False
+    EMAIL_VIAJES_USER: str = ""
+    EMAIL_VIAJES_PASSWORD: str = ""
+    EMAIL_VIAJES_IMAP: str = "imap.gmail.com"
+    EMAIL_VIAJES_INTERVALO: int = 300
 
     @classmethod
     def from_env(cls) -> 'Config':
@@ -329,6 +338,12 @@ class Config:
             DRIVE_EXCEL_EMPRESA_ID=os.getenv("DRIVE_EXCEL_EMPRESA_ID", ""),
             OPENWEATHER_API_KEY=os.getenv("OPENWEATHER_API_KEY", ""),
             TOMTOM_API_KEY=os.getenv("TOMTOM_API_KEY", ""),
+            OPENAI_API_KEY=os.getenv("OPENAI_API_KEY", ""),
+            EMAIL_VIAJES_ENABLED=os.getenv("EMAIL_VIAJES_ENABLED", "false").lower() == "true",
+            EMAIL_VIAJES_USER=os.getenv("EMAIL_VIAJES_USER", ""),
+            EMAIL_VIAJES_PASSWORD=os.getenv("EMAIL_VIAJES_PASSWORD", ""),
+            EMAIL_VIAJES_IMAP=os.getenv("EMAIL_VIAJES_IMAP", "imap.gmail.com"),
+            EMAIL_VIAJES_INTERVALO=int(os.getenv("EMAIL_VIAJES_INTERVALO", "300")),
         )
 
 
@@ -2154,17 +2169,6 @@ def main():
     app.add_handler(incidencias.get_conversation_handler())
     logger.info("✅ Incidencias conductor")
     
-    # Albaranes
-    from teclados import teclado_conductor
-    albaranes = crear_albaranes_conductor(
-        config.DB_PATH,
-        drive_service,
-        None,
-        teclado_conductor
-    )
-    app.add_handler(albaranes.get_conversation_handler())
-    logger.info("✅ Albaranes conductor")
-    
     # Cierre de día
     global cierre_dia_handler
     cierre = crear_cierre_dia(
@@ -2202,6 +2206,21 @@ def main():
     # Sync automática
     if app.job_queue:
         app.job_queue.run_repeating(sync_automatica, interval=config.SYNC_INTERVAL, first=30)
+    
+    # Lector de emails de viajes
+    if config.EMAIL_VIAJES_ENABLED and config.EMAIL_VIAJES_USER:
+        lector_emails = LectorEmailsViajes(
+            email_user=config.EMAIL_VIAJES_USER,
+            email_password=config.EMAIL_VIAJES_PASSWORD,
+            openai_api_key=config.OPENAI_API_KEY,
+            excel_path=config.EXCEL_EMPRESA,
+            drive_service=drive_service,
+            drive_excel_id=config.DRIVE_EXCEL_EMPRESA_ID,
+            imap_server=config.EMAIL_VIAJES_IMAP,
+            confianza_minima=70
+        )
+        crear_job_lector_emails(app, lector_emails, config.ADMIN_IDS, config.EMAIL_VIAJES_INTERVALO)
+        logger.info("✅ Lector de emails activo")
     
     logger.info("=" * 60)
     logger.info("✅ Bot activo")
