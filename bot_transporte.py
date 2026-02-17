@@ -2214,6 +2214,7 @@ def main():
             email_password=config.EMAIL_VIAJES_PASSWORD,
             openai_api_key=config.OPENAI_API_KEY,
             excel_path=config.EXCEL_EMPRESA,
+            db_path=config.DB_PATH,
             drive_service=drive_service,
             drive_excel_id=config.DRIVE_EXCEL_EMPRESA_ID,
             imap_server=config.EMAIL_VIAJES_IMAP,

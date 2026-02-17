@@ -28,6 +28,7 @@ from datetime import datetime
 from typing import Optional, Dict, List
 import re
 import openpyxl
+import sqlite3
 from pathlib import Path
 
 # OpenAI
@@ -63,6 +64,7 @@ class LectorEmailsViajes:
         email_password: str,
         openai_api_key: str,
         excel_path: str,
+        db_path: str = None,
         drive_service=None,
         drive_excel_id: str = None,
         imap_server: str = "imap.gmail.com",
@@ -74,9 +76,14 @@ class LectorEmailsViajes:
         self.imap_server = imap_server
         self.imap_port = imap_port
         self.excel_path = excel_path
+        self.db_path = db_path
         self.drive_service = drive_service
         self.drive_excel_id = drive_excel_id
         self.confianza_minima = confianza_minima
+        
+        # Verificar/crear columnas de fechas en BD
+        if db_path and Path(db_path).exists():
+            self._verificar_columnas_bd()
         
         # OpenAI client
         if openai_api_key and OpenAI:
@@ -131,6 +138,97 @@ REGLAS IMPORTANTES:
 6. Si hay MÚLTIPLES viajes en un email, devolver un ARRAY
 
 Responde SOLO con el JSON válido, sin explicaciones ni markdown."""
+
+    def _verificar_columnas_bd(self):
+        """Verifica y crea columnas de fechas si no existen"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Verificar columnas existentes
+            cursor.execute("PRAGMA table_info(viajes_empresa)")
+            columnas = [row[1] for row in cursor.fetchall()]
+            
+            # Añadir columnas si no existen
+            nuevas_columnas = [
+                ('fecha_carga', 'TEXT'),
+                ('hora_carga', 'TEXT'),
+                ('fecha_descarga', 'TEXT'),
+                ('hora_descarga', 'TEXT'),
+                ('email_origen', 'TEXT')
+            ]
+            
+            for col_nombre, col_tipo in nuevas_columnas:
+                if col_nombre not in columnas:
+                    cursor.execute(f"ALTER TABLE viajes_empresa ADD COLUMN {col_nombre} {col_tipo}")
+                    logger.info(f"[BD] Columna '{col_nombre}' añadida a viajes_empresa")
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"[BD] Error verificando columnas: {e}")
+    
+    def _actualizar_viaje_bd(self, viaje: Dict, fila_excel: int) -> bool:
+        """Actualiza el viaje en la BD con fechas/horas"""
+        if not self.db_path or not Path(self.db_path).exists():
+            return False
+        
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Buscar viaje por fila_excel
+            cursor.execute("""
+                UPDATE viajes_empresa 
+                SET fecha_carga = ?,
+                    hora_carga = ?,
+                    fecha_descarga = ?,
+                    hora_descarga = ?,
+                    email_origen = ?
+                WHERE fila_excel = ?
+            """, (
+                viaje.get('fecha_carga'),
+                viaje.get('hora_carga'),
+                viaje.get('fecha_descarga'),
+                viaje.get('hora_descarga'),
+                viaje.get('_email_asunto', '')[:100],
+                fila_excel
+            ))
+            
+            # Si no existe, insertar nuevo registro con datos básicos
+            if cursor.rowcount == 0:
+                cursor.execute("""
+                    INSERT INTO viajes_empresa (
+                        cliente, num_pedido, ref_cliente, lugar_carga, lugar_entrega,
+                        mercancia, intercambio, num_pales, fila_excel,
+                        fecha_carga, hora_carga, fecha_descarga, hora_descarga, email_origen,
+                        estado, fecha_sync
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)
+                """, (
+                    viaje.get('cliente'),
+                    viaje.get('num_pedido'),
+                    viaje.get('ref_cliente'),
+                    viaje.get('lugar_carga'),
+                    viaje.get('lugar_descarga'),
+                    viaje.get('mercancia'),
+                    viaje.get('intercambio'),
+                    viaje.get('num_pales'),
+                    fila_excel,
+                    viaje.get('fecha_carga'),
+                    viaje.get('hora_carga'),
+                    viaje.get('fecha_descarga'),
+                    viaje.get('hora_descarga'),
+                    viaje.get('_email_asunto', '')[:100],
+                    datetime.now().isoformat()
+                ))
+            
+            conn.commit()
+            conn.close()
+            logger.info(f"[BD] Viaje actualizado/insertado (fila {fila_excel})")
+            return True
+        except Exception as e:
+            logger.error(f"[BD] Error actualizando viaje: {e}")
+            return False
 
     def conectar(self) -> bool:
         """Conecta al servidor IMAP"""
@@ -348,7 +446,7 @@ CONTENIDO:
             return False
     
     def añadir_viaje_excel(self, viaje: Dict) -> bool:
-        """Añade un viaje al Excel"""
+        """Añade un viaje al Excel y a la BD"""
         
         if not self.excel_path or not Path(self.excel_path).exists():
             logger.error(f"[EXCEL] No encontrado: {self.excel_path}")
@@ -389,31 +487,27 @@ CONTENIDO:
             ws.cell(row=fila_nueva, column=14, value=lugar_carga.upper() if lugar_carga else '')
             ws.cell(row=fila_nueva, column=17, value=lugar_descarga.upper() if lugar_descarga else '')
             
-            # Fechas y horas
-            if viaje.get('fecha_carga'):
-                ws.cell(row=fila_nueva, column=15, value=viaje.get('fecha_carga'))
-            if viaje.get('hora_carga'):
-                ws.cell(row=fila_nueva, column=16, value=viaje.get('hora_carga'))
-            if viaje.get('fecha_descarga'):
-                ws.cell(row=fila_nueva, column=18, value=viaje.get('fecha_descarga'))
-            if viaje.get('hora_descarga'):
-                ws.cell(row=fila_nueva, column=19, value=viaje.get('hora_descarga'))
+            # NO escribir fechas/horas en columnas Excel (se guardan en BD)
             
             # Mercancía
             mercancia = viaje.get('mercancia') or ''
             ws.cell(row=fila_nueva, column=20, value=mercancia.upper() if mercancia else '')
             
-            # Observaciones (incluir origen del email)
+            # Observaciones (sin fechas/horas, van a la BD)
             obs_parts = []
             if viaje.get('observaciones'):
                 obs_parts.append(viaje.get('observaciones'))
-            obs_parts.append(f"[EMAIL: {viaje.get('_email_asunto', '')[:30]}]")
-            ws.cell(row=fila_nueva, column=28, value=' | '.join(obs_parts))
+            
+            ws.cell(row=fila_nueva, column=28, value=' | '.join(obs_parts) if obs_parts else '')
             
             wb.save(self.excel_path)
             wb.close()
             
             logger.info(f"✅ [EXCEL] Viaje añadido fila {fila_nueva}: {cliente} | {lugar_carga} → {lugar_descarga}")
+            
+            # Guardar fechas/horas en BD
+            self._actualizar_viaje_bd(viaje, fila_nueva)
+            
             return True
             
         except Exception as e:
