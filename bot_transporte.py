@@ -291,6 +291,7 @@ class Config:
     DB_PATH: str = "logistica.db"
     EXCEL_EMPRESA: str = "PRUEBO.xlsx"
     SYNC_INTERVAL: int = 60
+    ASIGNACION_AUTO: bool = False
     MONITOR_RETRASOS_ENABLED: bool = True
     MONITOR_RETRASOS_INTERVALO: int = 300  # segundos (5 min)
     # IDs de administradores (separados por coma)
@@ -335,6 +336,7 @@ class Config:
             SYNC_INTERVAL=int(os.getenv("SYNC_INTERVAL", "60")),
             MONITOR_RETRASOS_ENABLED=os.getenv("MONITOR_RETRASOS_ENABLED", "true").lower() == "true",
             MONITOR_RETRASOS_INTERVALO=int(os.getenv("MONITOR_RETRASOS_INTERVALO", "300")),
+            ASIGNACION_AUTO=os.getenv("ASIGNACION_AUTO", "false").lower() == "true",
             ADMIN_IDS=admin_ids,
             DRIVE_ENABLED=os.getenv("DRIVE_ENABLED", "false").lower() == "true",
             DRIVE_CREDENTIALS=os.getenv("DRIVE_CREDENTIALS", "credentials.json"),
@@ -2027,11 +2029,13 @@ async def sync_automatica(context: ContextTypes.DEFAULT_TYPE):
             sincronizar_direcciones(config.DB_PATH)
             
             # Asignar viajes pendientes automáticamente
-            asig = obtener_asignador()
-            if asig:
-                resultado_asignacion = asig.asignar_viajes_pendientes()
-                if resultado_asignacion.get('viajes_asignados', 0) > 0:
-                    logger.info(f"[SYNC] Viajes asignados: {resultado_asignacion['viajes_asignados']}")
+            # Asignar viajes pendientes (solo si ASIGNACION_AUTO=true en .env)
+            if config.ASIGNACION_AUTO:
+                asig = obtener_asignador()
+                if asig:
+                    resultado_asignacion = asig.asignar_viajes_pendientes()
+                    if resultado_asignacion.get('viajes_asignados', 0) > 0:
+                        logger.info(f"[SYNC] Viajes asignados: {resultado_asignacion['viajes_asignados']}")
             
             # Notificar viajes nuevos (después de asignar)
             notif = obtener_notificador()
