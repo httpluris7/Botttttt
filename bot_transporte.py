@@ -51,7 +51,7 @@ from inteligencia_dual import InteligenciaDual
 
 # Lector de emails de viajes
 from lector_emails_viajes import LectorEmailsViajes, crear_job_lector_emails
-
+from monitor_retrasos import MonitorRetrasos
 # Google Drive
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -291,7 +291,8 @@ class Config:
     DB_PATH: str = "logistica.db"
     EXCEL_EMPRESA: str = "PRUEBO.xlsx"
     SYNC_INTERVAL: int = 60
-    
+    MONITOR_RETRASOS_ENABLED: bool = True
+    MONITOR_RETRASOS_INTERVALO: int = 300  # segundos (5 min)
     # IDs de administradores (separados por coma)
     ADMIN_IDS: List[int] = None
     
@@ -332,6 +333,8 @@ class Config:
             DB_PATH=os.getenv("DB_PATH", "logistica.db"),
             EXCEL_EMPRESA=os.getenv("EXCEL_EMPRESA", "PRUEBO.xlsx"),
             SYNC_INTERVAL=int(os.getenv("SYNC_INTERVAL", "60")),
+            MONITOR_RETRASOS_ENABLED=os.getenv("MONITOR_RETRASOS_ENABLED", "true").lower() == "true",
+            MONITOR_RETRASOS_INTERVALO=int(os.getenv("MONITOR_RETRASOS_INTERVALO", "300")),
             ADMIN_IDS=admin_ids,
             DRIVE_ENABLED=os.getenv("DRIVE_ENABLED", "false").lower() == "true",
             DRIVE_CREDENTIALS=os.getenv("DRIVE_CREDENTIALS", "credentials.json"),
@@ -2223,6 +2226,25 @@ def main():
         crear_job_lector_emails(app, lector_emails, config.ADMIN_IDS, config.EMAIL_VIAJES_INTERVALO)
         logger.info("✅ Lector de emails activo")
     
+    if config.MONITOR_RETRASOS_ENABLED:
+        monitor_retrasos = MonitorRetrasos(
+            db_path=config.DB_PATH,
+            excel_path=config.EXCEL_EMPRESA,
+            bot=app.bot,
+            admin_ids=config.ADMIN_IDS,
+        )
+        app.job_queue.run_repeating(
+            monitor_retrasos.verificar_retrasos,
+            interval=config.MONITOR_RETRASOS_INTERVALO,
+            first=120,  # esperar 2min al arrancar (dar tiempo al sync)
+        )
+        # Reset diario a medianoche
+        app.job_queue.run_daily(
+            lambda ctx: monitor_retrasos.resetear_alertas_diarias(),
+            time=datetime.strptime("00:00", "%H:%M").time(),
+        )
+        logger.info(f"✅ Monitor retrasos activo (cada {config.MONITOR_RETRASOS_INTERVALO}s, umbral 25%)")
+
     logger.info("=" * 60)
     logger.info("✅ Bot activo")
     logger.info("=" * 60)
