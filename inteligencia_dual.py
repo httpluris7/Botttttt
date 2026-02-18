@@ -1,7 +1,13 @@
 """
 INTELIGENCIA DUAL - GPT + SQL
 ==============================
-Version 11.0 - Con soporte para GESTIONES por lenguaje natural
+Version 12.0 - Assistant consciente del rol (admin vs conductor)
+
+CAMBIOS v12.0:
+- chat_libre() ahora recibe es_admin, conductor y db_path
+- Inyecta contexto dinámico de BD en cada mensaje al Assistant
+- additional_instructions diferentes según rol (admin/conductor)
+- El Assistant sabe si habla con un responsable o un camionero
 """
 
 import os
@@ -99,41 +105,199 @@ ASSISTANT_ID = "asst_DmmRrep6S45qhxWJ4TeUofaG"
 # Historial de threads por usuario para mantener contexto
 _threads_usuarios = {}
 
-def chat_libre(mensaje: str, nombre: str = "", telegram_id: int = None) -> str:
-    """Chat usando el Assistant de OpenAI para consultas de transporte"""
+# Instrucciones adicionales según rol (se pasan en cada run)
+_INSTRUCCIONES_ADMIN = """
+El usuario es un ADMINISTRADOR/RESPONSABLE de la empresa de transporte.
+Puede preguntarte sobre:
+- Estado general de la flota y conductores
+- Viajes pendientes, asignaciones, problemas
+- Estrategia de rutas, optimización, costes
+- Gestión de incidencias y retrasos
+- Datos de facturación, precios, rentabilidad
+Responde con visión de gestión, datos concretos y sugerencias operativas.
+Tutéale pero con tono profesional. Puedes mencionar datos del contexto que recibes.
+"""
+
+_INSTRUCCIONES_CONDUCTOR = """
+El usuario es un CONDUCTOR de camión.
+Puede preguntarte sobre:
+- Sus viajes asignados, rutas, horarios de carga/descarga
+- Gasolineras, tráfico, clima en ruta
+- Dudas sobre cargas, descargas, documentación
+- Problemas mecánicos o incidencias en ruta
+Responde de forma directa, práctica y cercana.
+Tutéale con tono de compañero. Si tienes datos de sus viajes en el contexto, úsalos.
+"""
+
+
+def _construir_contexto_usuario(
+    nombre: str,
+    es_admin: bool,
+    conductor: dict = None,
+    db_path: str = None
+) -> str:
+    """
+    Construye bloque de contexto que se inyecta en el mensaje al Assistant.
+    Así el Assistant sabe con QUIÉN habla y tiene datos frescos de la BD.
+    """
+    nombre_corto = nombre.split()[0] if nombre else "compañero"
+
+    if es_admin:
+        contexto = f"[ROL: ADMINISTRADOR | Nombre: {nombre_corto}]\n"
+
+        # Inyectar resumen de flota
+        if db_path:
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+
+                cursor.execute("""
+                    SELECT COUNT(*) FROM viajes_empresa 
+                    WHERE estado IN ('pendiente', 'en_curso', 'asignado')
+                """)
+                viajes_activos = cursor.fetchone()[0]
+
+                cursor.execute("""
+                    SELECT COUNT(*) FROM viajes_empresa 
+                    WHERE (conductor_asignado IS NULL OR conductor_asignado = '')
+                      AND estado != 'completado'
+                """)
+                sin_asignar = cursor.fetchone()[0]
+
+                cursor.execute("""
+                    SELECT COUNT(*) FROM conductores_empresa 
+                    WHERE nombre IS NOT NULL AND nombre != ''
+                """)
+                total_conductores = cursor.fetchone()[0]
+
+                contexto += (
+                    f"[Estado flota: {total_conductores} conductores, "
+                    f"{viajes_activos} viajes activos, "
+                    f"{sin_asignar} sin asignar]\n"
+                )
+
+                # Viajes de hoy sin conductor (los más urgentes)
+                if sin_asignar > 0:
+                    cursor.execute("""
+                        SELECT cliente, lugar_carga, lugar_entrega, hora_carga
+                        FROM viajes_empresa
+                        WHERE (conductor_asignado IS NULL OR conductor_asignado = '')
+                          AND estado != 'completado'
+                        LIMIT 3
+                    """)
+                    urgentes = cursor.fetchall()
+                    if urgentes:
+                        contexto += "[Viajes sin conductor:\n"
+                        for u in urgentes:
+                            contexto += f"  - {u[0]}: {u[1]} → {u[2]} ({u[3] or 'sin hora'})\n"
+                        contexto += "]\n"
+
+                conn.close()
+            except Exception as e:
+                logger.debug(f"[CONTEXTO] Error leyendo BD para admin: {e}")
+    else:
+        contexto = f"[ROL: CONDUCTOR | Nombre: {nombre_corto}]\n"
+
+        if conductor:
+            tractora = conductor.get('tractora', 'N/A')
+            ubicacion = conductor.get('ubicacion', 'N/A')
+            contexto += f"[Tractora: {tractora} | Base: {ubicacion}]\n"
+
+        # Inyectar viajes del conductor
+        if db_path and nombre:
+            try:
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+
+                cursor.execute("""
+                    SELECT cliente, lugar_carga, lugar_entrega, estado,
+                           mercancia, km, observaciones,
+                           hora_carga, hora_descarga, fecha_carga, fecha_descarga,
+                           direccion_carga, direccion_descarga
+                    FROM viajes_empresa
+                    WHERE conductor_asignado = ?
+                      AND estado IN ('pendiente', 'en_curso', 'asignado')
+                    ORDER BY id DESC
+                    LIMIT 3
+                """, (nombre,))
+
+                viajes = cursor.fetchall()
+                if viajes:
+                    contexto += f"[Viajes activos: {len(viajes)}]\n"
+                    for v in viajes:
+                        contexto += (
+                            f"  - {v['cliente']}: {v['lugar_carga']} → {v['lugar_entrega']} "
+                            f"(estado: {v['estado']})\n"
+                            f"    Mercancía: {v['mercancia'] or '?'} | {v['km'] or '?'} km\n"
+                            f"    Carga: {v['fecha_carga'] or '?'} {v['hora_carga'] or ''}\n"
+                            f"    Descarga: {v['fecha_descarga'] or '?'} {v['hora_descarga'] or ''}\n"
+                        )
+                        if v['observaciones']:
+                            contexto += f"    Obs: {v['observaciones'][:80]}\n"
+                else:
+                    contexto += "[Sin viajes activos]\n"
+
+                conn.close()
+            except Exception as e:
+                logger.debug(f"[CONTEXTO] Error leyendo BD para conductor: {e}")
+
+    return contexto
+
+
+def chat_libre(
+    mensaje: str,
+    nombre: str = "",
+    telegram_id: int = None,
+    es_admin: bool = False,
+    conductor: dict = None,
+    db_path: str = None
+) -> str:
+    """
+    Chat usando el Assistant de OpenAI, con contexto de rol.
+
+    Args:
+        mensaje: Texto del usuario
+        nombre: Nombre completo del usuario
+        telegram_id: ID de Telegram
+        es_admin: Si es administrador
+        conductor: Dict con datos del conductor (tractora, ubicacion, etc.)
+        db_path: Ruta a la BD para inyectar contexto dinámico
+    """
     try:
-        nombre_corto = nombre.split()[0] if nombre else "compañero"
-        
-        # Reutilizar thread si el usuario ya tiene uno (mantiene contexto)
+        # Construir contexto enriquecido
+        contexto = _construir_contexto_usuario(nombre, es_admin, conductor, db_path)
+
+        # Reutilizar thread si el usuario ya tiene uno
         thread_id = _threads_usuarios.get(telegram_id)
-        
+
         if thread_id:
             try:
-                # Verificar que el thread sigue válido
                 client.beta.threads.retrieve(thread_id)
             except Exception:
                 thread_id = None
-        
+
         if not thread_id:
             thread = client.beta.threads.create()
             thread_id = thread.id
             if telegram_id:
                 _threads_usuarios[telegram_id] = thread_id
-        
-        # Añadir mensaje del usuario
+
+        # Mensaje con contexto de rol
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
-            content=f"[Conductor: {nombre_corto}] {mensaje}"
+            content=f"{contexto}\n{mensaje}"
         )
-        
-        # Ejecutar el Assistant
+
+        # Ejecutar con instrucciones adicionales según rol
         run = client.beta.threads.runs.create_and_poll(
             thread_id=thread_id,
             assistant_id=ASSISTANT_ID,
+            additional_instructions=_INSTRUCCIONES_ADMIN if es_admin else _INSTRUCCIONES_CONDUCTOR,
             timeout=30
         )
-        
+
         if run.status == "completed":
             messages = client.beta.threads.messages.list(
                 thread_id=thread_id,
@@ -145,7 +309,7 @@ def chat_libre(mensaje: str, nombre: str = "", telegram_id: int = None) -> str:
         else:
             logger.error(f"Assistant run status: {run.status}")
             return "🤖 Perdona, no he podido procesar tu consulta. Inténtalo de nuevo."
-    
+
     except Exception as e:
         logger.error(f"Error chat_libre (Assistant): {e}")
         return "🤖 Perdona, ¿qué me decías?"
@@ -156,7 +320,7 @@ class InteligenciaDual:
     def __init__(self, db_path: str, movildata_api=None):
         self.db_path = db_path
         self.movildata = movildata_api
-        logger.info("[OK] Inteligencia Dual v11 inicializada (con gestiones)")
+        logger.info("[OK] Inteligencia Dual v12 inicializada (con roles + gestiones)")
     
     def _query(self, query: str, params: tuple = (), fetch_one: bool = False):
         try:
@@ -441,9 +605,9 @@ class InteligenciaDual:
         
         # === NO ENTENDIDO → ASSISTANT TRANSPORTE ===
         if intencion == 'no_entendido' or confianza < 0.5:
-            return (chat_libre(mensaje, nombre, telegram_id), None)
+            return (chat_libre(mensaje, nombre, telegram_id, es_admin, conductor, self.db_path), None)
         
-        return (chat_libre(mensaje, nombre, telegram_id), None)
+        return (chat_libre(mensaje, nombre, telegram_id, es_admin, conductor, self.db_path), None)
     
     # Método legacy para compatibilidad (sin tupla)
     def responder_simple(self, telegram_id: int, mensaje: str, conductor: Dict, es_admin: bool = False) -> str:
