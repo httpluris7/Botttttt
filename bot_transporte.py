@@ -65,6 +65,7 @@ from extractor_telefonos import sincronizar_telefonos
 from generador_direcciones import sincronizar_direcciones
 from notificaciones_viajes import inicializar_notificador, obtener_notificador
 from asignador_viajes import inicializar_asignador, obtener_asignador
+from asignacion_manual import AsignacionManual
 from gestiones_manager import GestionesManager
 from modificador_viajes_ruta import ModificadorViajesRuta
 from registros_conductor import crear_registros_conductor
@@ -282,6 +283,7 @@ drive_service = None
 inteligencia = None
 notificador = None
 asignador = None
+asignacion_manual = None
 
 
 @dataclass
@@ -1901,7 +1903,7 @@ async def mensaje_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 return await resumen_conductor(update, context)
         elif accion == "asignar":
-            return await asignar(update, context)
+            return await asignacion_manual.inicio(update, context)
         elif accion == "conductores":
             return await conductores(update, context)
         elif accion == "todos_viajes":
@@ -2057,7 +2059,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Función principal"""
-    global separador_excel, movildata_api, inteligencia, db, notificador, asignador
+    global separador_excel, movildata_api, inteligencia, db, notificador, asignador, asignacion_manual
     
     logger.info("=" * 60)
     logger.info("BOT TRANSPORTE v2.0 - PERFILES DUAL")
@@ -2101,6 +2103,16 @@ def main():
         on_excel_updated=subir_excel_a_drive if config.DRIVE_ENABLED else None
     )
     logger.info("✅ Asignador de viajes")
+    
+    # Asignación manual
+    asignacion_manual = AsignacionManual(
+        db_path=config.DB_PATH,
+        excel_path=config.EXCEL_EMPRESA,
+        on_excel_updated=subir_excel_a_drive if config.DRIVE_ENABLED else None,
+        admin_ids=config.ADMIN_IDS,
+        movildata_api=movildata_api,
+    )
+    logger.info("✅ Asignación manual")
     
     # Inteligencia dual
     inteligencia = InteligenciaDual(config.DB_PATH, movildata_api)
@@ -2203,6 +2215,10 @@ def main():
     app.add_handler(CallbackQueryHandler(callback_rutas_volver, pattern="^rutas:volver$"))
     app.add_handler(CallbackQueryHandler(callback_incidencia_listo, pattern="^inc_listo$"))
     logger.info("✅ Consultar rutas")
+    
+    # Asignación manual de viajes
+    asignacion_manual.registrar_handlers(app)
+    logger.info("✅ Handlers asignación manual")
     
     # Mensajes texto
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, mensaje_texto))
