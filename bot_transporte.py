@@ -2281,7 +2281,7 @@ def main():
     
     # Dashboard Streamlit
     import subprocess
-    dashboard_path = os.path.join(os.path.dirname(config.EXCEL_PATH), "dashboard_transporte.py")
+    dashboard_path = "/root/bot-transporte/Botttttt/dashboard_transporte.py"
     if os.path.exists(dashboard_path):
         subprocess.Popen(
             ["streamlit", "run", dashboard_path, "--server.port", "8501", "--server.address", "0.0.0.0", "--server.headless", "true"],
