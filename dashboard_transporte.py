@@ -298,6 +298,7 @@ with st.sidebar:
         "👥 Conductores",
         "💰 Facturación",
         "🗺️ Mapa de Rutas",
+        "🚛 Camiones Vacíos",
         "🤖 Predictor de Precios",
         "🎯 Segmentación Clientes",
         "⚠️ Anomalías de Precio",
@@ -545,6 +546,358 @@ elif pagina == "🗺️ Mapa de Rutas":
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No hay rutas con coordenadas conocidas.")
+
+
+# ================================================================
+# 🚛 CAMIONES VACÍOS - ANÁLISIS DE RETORNO
+# ================================================================
+elif pagina == "🚛 Camiones Vacíos":
+    st.title("🚛 Análisis de Camiones Vacíos")
+    st.caption("Identifica zonas sin clientes directos donde dependes de Wtransnet o pierdes dinero volviendo vacío")
+
+    if df_viajes.empty:
+        st.warning("No hay viajes para analizar.")
+    else:
+        COSTE_KM = 0.90  # Coste operativo por km
+        WTRANSNET_EUR_KM = 0.95  # Precio medio retorno Wtransnet (bajo margen)
+
+        descargas = df_viajes[df_viajes['lugar_entrega'].notna() & (df_viajes['lugar_entrega'] != '')]
+        cargas = df_viajes[df_viajes['lugar_carga'].notna() & (df_viajes['lugar_carga'] != '')]
+
+        desc_counts = descargas['lugar_entrega'].str.upper().str.strip().value_counts().reset_index()
+        desc_counts.columns = ['ciudad', 'descargas']
+        carg_counts = cargas['lugar_carga'].str.upper().str.strip().value_counts().reset_index()
+        carg_counts.columns = ['ciudad', 'cargas']
+
+        balance = desc_counts.merge(carg_counts, on='ciudad', how='outer').fillna(0)
+        balance['descargas'] = balance['descargas'].astype(int)
+        balance['cargas'] = balance['cargas'].astype(int)
+        balance['vacios'] = balance['descargas'] - balance['cargas']
+        balance = balance.sort_values('vacios', ascending=False)
+
+        zonas_vacias = balance[balance['vacios'] > 0]
+        total_vacios = zonas_vacias['vacios'].sum()
+        total_viajes = len(df_viajes)
+
+        # €/km medio por destino (de IDA con cliente directo)
+        eur_km_por_dest = {}
+        if 'precio' in df_viajes.columns and 'km' in df_viajes.columns:
+            tmp = df_viajes[(df_viajes['precio'] > 0) & (df_viajes['km'] > 0)].copy()
+            tmp['dest_norm'] = tmp['lugar_entrega'].str.upper().str.strip()
+            for dest, grp in tmp.groupby('dest_norm'):
+                eur_km_por_dest[dest] = grp['precio'].sum() / grp['km'].sum()
+
+        origenes_dict = cargas['lugar_carga'].str.upper().str.strip().value_counts().to_dict()
+
+        def distancia_km(c1, c2):
+            p1 = get_coord(c1)
+            p2 = get_coord(c2)
+            if not p1[0] or not p2[0]:
+                return 99999
+            dlat = math.radians(p2[0] - p1[0])
+            dlon = math.radians(p2[1] - p1[1])
+            a = math.sin(dlat/2)**2 + math.cos(math.radians(p1[0])) * math.cos(math.radians(p2[0])) * math.sin(dlon/2)**2
+            return 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a)) * 1.3
+
+        cli_por_orig = {}
+        if 'cliente' in df_viajes.columns:
+            tmp2 = df_viajes[df_viajes['lugar_carga'].notna()].copy()
+            tmp2['orig_norm'] = tmp2['lugar_carga'].str.upper().str.strip()
+            for orig, grp in tmp2.groupby('orig_norm'):
+                cli_por_orig[orig] = grp['cliente'].value_counts().head(3).to_dict()
+
+        # Calcular datos por zona
+        zonas_data = []
+        for _, row in zonas_vacias.iterrows():
+            dest = row['ciudad']
+            n_vacios = int(row['vacios'])
+            n_descargas = int(row['descargas'])
+
+            mejor_km = 99999
+            mejor_orig = '-'
+            origenes_100km = []
+
+            for orig in origenes_dict:
+                km = distancia_km(dest, orig)
+                if km < mejor_km:
+                    mejor_km = km
+                    mejor_orig = orig
+                if km < 100:
+                    origenes_100km.append((orig, km, origenes_dict[orig]))
+
+            if origenes_100km:
+                estado = "🟢 CUBIERTO"
+                prioridad = 0
+            elif mejor_km < 200:
+                estado = "🟡 LEJOS"
+                prioridad = 1
+            else:
+                estado = "🔴 SIN CARGA"
+                prioridad = 2
+
+            km_base = distancia_km(dest, "CALAHORRA")
+            if km_base >= 99999:
+                km_base = 0
+
+            # Escenarios económicos
+            coste_vacio = km_base * COSTE_KM * n_vacios
+            ingreso_wtransnet = km_base * WTRANSNET_EUR_KM * n_vacios
+            beneficio_wtransnet = ingreso_wtransnet - (km_base * COSTE_KM * n_vacios)
+            eur_km_directo = eur_km_por_dest.get(dest, 1.35)
+            ingreso_directo = km_base * eur_km_directo * n_vacios
+            beneficio_directo = ingreso_directo - (km_base * COSTE_KM * n_vacios)
+
+            # Mercancías y clientes
+            merc_zona = descargas[descargas['lugar_entrega'].str.upper().str.strip() == dest]
+            mercancias = merc_zona['mercancia'].value_counts().head(3).to_dict() if 'mercancia' in merc_zona.columns else {}
+            clientes = merc_zona['cliente'].value_counts().head(3).to_dict() if 'cliente' in merc_zona.columns else {}
+
+            zonas_data.append({
+                'ciudad': dest, 'vacios': n_vacios, 'descargas': n_descargas,
+                'estado': estado, 'prioridad': prioridad,
+                'carga_cercana': mejor_orig, 'km_carga': mejor_km,
+                'origenes_100km': origenes_100km,
+                'km_base': km_base,
+                'coste_vacio': coste_vacio,
+                'ingreso_wtransnet': ingreso_wtransnet,
+                'beneficio_wtransnet': beneficio_wtransnet,
+                'ingreso_directo': ingreso_directo,
+                'beneficio_directo': beneficio_directo,
+                'eur_km_ida': eur_km_directo,
+                'mercancias': mercancias, 'clientes': clientes,
+            })
+
+        df_cob = pd.DataFrame(zonas_data).sort_values(['prioridad', 'vacios'], ascending=[False, False])
+        sin_carga = df_cob[df_cob['prioridad'] == 2]
+        lejos = df_cob[df_cob['prioridad'] == 1]
+        cubiertos = df_cob[df_cob['prioridad'] == 0]
+
+        coste_total_vacio = df_cob['coste_vacio'].sum()
+        beneficio_total_directo = df_cob[df_cob['prioridad'] >= 1]['beneficio_directo'].sum()
+
+        # ---- KPIs ----
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("🔴 Sin clientes cerca", f"{len(sin_carga)} zonas", f"{sin_carga['vacios'].sum()} camiones")
+        c2.metric("💸 Coste retornos vacíos", f"{coste_total_vacio:,.0f}€")
+        c3.metric("🎯 Ahorro con cliente directo", f"+{beneficio_total_directo:,.0f}€", "vs volver vacío")
+        c4.metric("📊 Tasa retorno vacío", f"{(total_vacios/total_viajes*100):.0f}%", f"{total_vacios}/{total_viajes} viajes")
+
+        st.divider()
+
+        # ---- GRÁFICO: 3 escenarios por zona ----
+        st.subheader("💰 Impacto Económico por Zona: Vacío vs Wtransnet vs Cliente Directo")
+        st.caption("Rojo = pérdida volviendo vacío | Amarillo = Wtransnet (bajo margen) | Verde = cliente directo")
+
+        zonas_graf = df_cob[df_cob['km_base'] > 0].sort_values('coste_vacio', ascending=False).head(15)
+        if not zonas_graf.empty:
+            fig_eco = go.Figure()
+            fig_eco.add_trace(go.Bar(
+                name='❌ Retorno vacío (pérdida)',
+                x=zonas_graf['ciudad'], y=-zonas_graf['coste_vacio'],
+                marker_color='#e74c3c',
+                text=[f"-{v:,.0f}€" for v in zonas_graf['coste_vacio']],
+                textposition='auto'
+            ))
+            fig_eco.add_trace(go.Bar(
+                name='🟡 Wtransnet (bajo margen)',
+                x=zonas_graf['ciudad'], y=zonas_graf['beneficio_wtransnet'],
+                marker_color='#f39c12',
+                text=[f"{v:+,.0f}€" for v in zonas_graf['beneficio_wtransnet']],
+                textposition='auto'
+            ))
+            fig_eco.add_trace(go.Bar(
+                name='🟢 Cliente directo',
+                x=zonas_graf['ciudad'], y=zonas_graf['beneficio_directo'],
+                marker_color='#2ecc71',
+                text=[f"+{v:,.0f}€" for v in zonas_graf['beneficio_directo']],
+                textposition='auto'
+            ))
+            fig_eco.update_layout(
+                barmode='group', height=450, xaxis_tickangle=-45,
+                yaxis_title="€ (beneficio / pérdida)",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                shapes=[dict(type="line", x0=-0.5, x1=len(zonas_graf)-0.5, y0=0, y1=0,
+                            line=dict(color="black", width=1, dash="dash"))]
+            )
+            st.plotly_chart(fig_eco, use_container_width=True)
+
+        # ---- GRÁFICO: Balance cargas vs descargas ----
+        st.subheader("📊 Balance Cargas vs Descargas por Ciudad")
+        top_balance = balance.head(20).copy()
+        fig_balance = go.Figure()
+        fig_balance.add_trace(go.Bar(
+            name='Descargas (dejan camión)', x=top_balance['ciudad'], y=top_balance['descargas'],
+            marker_color='#e74c3c', text=top_balance['descargas'], textposition='auto'
+        ))
+        fig_balance.add_trace(go.Bar(
+            name='Cargas (recogen camión)', x=top_balance['ciudad'], y=top_balance['cargas'],
+            marker_color='#2ecc71', text=top_balance['cargas'], textposition='auto'
+        ))
+        fig_balance.update_layout(barmode='group', height=400, xaxis_tickangle=-45,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        st.plotly_chart(fig_balance, use_container_width=True)
+
+        # ---- MAPA DE COBERTURA ----
+        st.subheader("🗺️ Mapa de Cobertura Comercial")
+        st.caption("🔴 Sin clientes cerca → dependes de Wtransnet o vacío | 🟡 Carga lejos | 🟢 Cubierto")
+        map_data = []
+        for _, row in df_cob.iterrows():
+            coord = get_coord(row['ciudad'])
+            if coord[0]:
+                map_data.append({
+                    'ciudad': row['ciudad'], 'lat': coord[0], 'lon': coord[1],
+                    'vacios': row['vacios'], 'estado': row['estado'],
+                    'km_carga': row['km_carga'] if row['km_carga'] < 99999 else 0,
+                    'coste_vacio': f"{row['coste_vacio']:,.0f}€",
+                })
+        if map_data:
+            df_map = pd.DataFrame(map_data)
+            fig_map = px.scatter_mapbox(
+                df_map, lat='lat', lon='lon', size='vacios',
+                color='estado',
+                color_discrete_map={"🔴 SIN CARGA": "#e74c3c", "🟡 LEJOS": "#f39c12", "🟢 CUBIERTO": "#2ecc71"},
+                hover_name='ciudad',
+                hover_data={'vacios': True, 'coste_vacio': True, 'lat': False, 'lon': False},
+                size_max=35, zoom=5, center={"lat": 40.4, "lon": -3.7},
+                mapbox_style="open-street-map"
+            )
+            fig_map.update_layout(height=500)
+            st.plotly_chart(fig_map, use_container_width=True)
+
+        # ---- 🔴 ZONAS CRÍTICAS: FICHA COMERCIAL ----
+        if not sin_carga.empty:
+            st.subheader("🔴 Zonas Críticas — Fichas Comerciales")
+            st.caption("Sin clientes directos cerca. Cada viaje a estas zonas = Wtransnet o vacío en el retorno.")
+
+            for _, row in sin_carga.sort_values('coste_vacio', ascending=False).iterrows():
+                if row['km_base'] == 0:
+                    continue  # Saltar zonas sin coordenadas
+
+                ciudad = row['ciudad']
+                vacios = row['vacios']
+                km_base = row['km_base']
+                coste_v = row['coste_vacio']
+                ben_wt = row['beneficio_wtransnet']
+                ben_dir = row['beneficio_directo']
+                ing_dir = row['ingreso_directo']
+                eur_km = row['eur_km_ida']
+                merc = row['mercancias']
+                clis = row['clientes']
+
+                merc_str = ", ".join([f"{m} ({n}x)" for m, n in merc.items()]) if merc else "Varios"
+                cli_str = ", ".join([f"{c} ({n}x)" for c, n in clis.items()]) if clis else "-"
+
+                # Determinar tipo de remolque necesario
+                tipos_remolque = set()
+                for m in merc:
+                    m_up = str(m).upper()
+                    if 'CONGELADO' in m_up or '-18' in m_up or '-22' in m_up or '-25' in m_up:
+                        tipos_remolque.add("🧊 Congelado")
+                    elif 'REFRIGERADO' in m_up or '+2' in m_up or '+5' in m_up or '+3' in m_up:
+                        tipos_remolque.add("❄️ Refrigerado")
+                    elif 'SECO' in m_up:
+                        tipos_remolque.add("📦 Seco")
+                rem_str = ", ".join(tipos_remolque) if tipos_remolque else "Frigorífico (varios)"
+
+                with st.expander(f"🔴 {ciudad} — {vacios} camiones vacíos | Pérdida: {coste_v:,.0f}€", expanded=(vacios >= 5)):
+                    col_a, col_b = st.columns(2)
+
+                    with col_a:
+                        st.markdown("**📊 Situación actual**")
+                        st.markdown(f"""
+- **{vacios} camiones** quedan vacíos tras descargar
+- Retorno a base: **{km_base:.0f} km**
+- €/km de IDA (media): **{eur_km:.2f}€/km**
+- Clientes que envían aquí: {cli_str}
+- Mercancía: {merc_str}
+- Remolque: {rem_str}
+""")
+
+                    with col_b:
+                        st.markdown("**💰 3 Escenarios por viaje**")
+                        st.markdown(f"""
+| Escenario | Resultado |
+|---|---|
+| ❌ Volver vacío | **-{km_base * COSTE_KM:,.0f}€** por viaje |
+| 🟡 Wtransnet (~{WTRANSNET_EUR_KM}€/km) | **{km_base * (WTRANSNET_EUR_KM - COSTE_KM):+,.0f}€** por viaje |
+| 🟢 Cliente directo (~{eur_km:.2f}€/km) | **+{km_base * (eur_km - COSTE_KM):,.0f}€** por viaje |
+""")
+
+                    st.markdown(f"""
+🎯 **Acción comercial:** Buscar en **{ciudad}** y alrededores clientes que necesiten transporte **{rem_str}** con destino **Navarra / La Rioja** (o Vitoria, Zaragoza, Bilbao).
+Un solo cliente directo en esta zona ahorraría **~{(km_base * COSTE_KM + km_base * (eur_km - COSTE_KM)) * 12:,.0f}€/año** (1 viaje/mes).
+""")
+
+        # ---- 🟡 ZONAS CON CARGA LEJOS ----
+        if not lejos.empty:
+            st.subheader("🟡 Zonas con Carga Lejos (100-200km)")
+            st.caption("Hay puntos de carga pero a más de 100km. Valorar si compensa desplazarse o buscar algo más cerca.")
+            for _, row in lejos.iterrows():
+                st.markdown(
+                    f"**{row['ciudad']}** — {row['vacios']} vacíos | "
+                    f"Carga más cerca: {row['carga_cercana']} ({row['km_carga']:.0f}km) | "
+                    f"Pérdida vacío: {row['coste_vacio']:,.0f}€"
+                )
+
+        # ---- 🟢 ZONAS CUBIERTAS ----
+        if not cubiertos.empty:
+            st.subheader("🟢 Zonas Cubiertas (<100km a punto de carga)")
+            for _, row in cubiertos.iterrows():
+                origs = row['origenes_100km']
+                orig_str = " | ".join([f"{o} ({k:.0f}km)" for o, k, n in origs[:3]]) if origs else "-"
+                clientes_cerca = []
+                for o, k, n in (origs or []):
+                    if o in cli_por_orig:
+                        for cl, nv in cli_por_orig[o].items():
+                            clientes_cerca.append(f"{cl}({nv})")
+                cli_str = ", ".join(clientes_cerca[:5]) if clientes_cerca else "-"
+                st.markdown(f"**{row['ciudad']}** — Cargas cerca: {orig_str} → Clientes: {cli_str}")
+
+        # ---- RESUMEN EJECUTIVO ----
+        st.divider()
+        st.subheader("📋 Resumen Ejecutivo para Dirección Comercial")
+
+        total_sin = sin_carga['vacios'].sum() if not sin_carga.empty else 0
+        coste_sin = sin_carga['coste_vacio'].sum() if not sin_carga.empty else 0
+        ahorro_directo = sin_carga['beneficio_directo'].sum() if not sin_carga.empty else 0
+        top_3 = sin_carga[sin_carga['km_base'] > 0].sort_values('coste_vacio', ascending=False).head(5)
+
+        st.markdown(f"""
+**Problema:**
+- **{total_vacios} de {total_viajes}** camiones ({total_vacios/total_viajes*100:.0f}%) no tienen carga de retorno
+- **{len(sin_carga)} zonas** no tienen ningún punto de carga a menos de 200km
+- Coste total de retornos vacíos: **{coste_total_vacio:,.0f}€**
+
+**Opciones actuales sin cliente directo:**
+
+| | Vacío | Wtransnet |
+|---|---|---|
+| Ingresos | 0€ | ~{WTRANSNET_EUR_KM}€/km |
+| Coste operativo | {COSTE_KM}€/km | {COSTE_KM}€/km |
+| Resultado | **Pérdida total** | **Margen mínimo** (~{(WTRANSNET_EUR_KM/COSTE_KM - 1)*100:.0f}%) |
+
+**Top 5 zonas para acción comercial:**
+""")
+        if not top_3.empty:
+            for _, r in top_3.iterrows():
+                ahorro_anual = (r['km_base'] * COSTE_KM + r['km_base'] * (r['eur_km_ida'] - COSTE_KM)) * 12
+                st.markdown(
+                    f"- **{r['ciudad']}**: {r['vacios']} vacíos, {r['km_base']:.0f}km retorno, "
+                    f"pérdida actual {r['coste_vacio']:,.0f}€ → "
+                    f"**1 cliente directo = ~{ahorro_anual:,.0f}€/año**"
+                )
+
+        st.markdown(f"""
+
+**Tipo de cliente a buscar:**
+- Transporte **frigorífico** (refrigerado/congelado) — es lo que llevan tus camiones
+- Con destino **Navarra / La Rioja** (Arnedo, Alfaro, Quel, Lodosa, Azagra)
+- También sirven retornos a **Vitoria, Zaragoza, Bilbao** (zonas ya cubiertas)
+
+**Objetivo:** Reducir del {total_vacios/total_viajes*100:.0f}% al 50% de retornos vacíos → **ahorro de ~{coste_total_vacio/2:,.0f}€** + ingresos nuevos
+
+*Los datos mejorarán conforme se acumule más histórico de viajes.*
+""")
 
 
 # ================================================================
