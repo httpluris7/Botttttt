@@ -1922,6 +1922,16 @@ async def mensaje_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await cmd_informe_semanal(update, context)
         elif accion == "rentabilidad":
             return await cmd_rentabilidad(update, context)
+        elif accion == "dashboard":
+            if es_admin(user.id):
+                await update.message.reply_text(
+                    f"📊 *DASHBOARD ANALYTICS*\n\n"
+                    f"🔗 [Abrir Dashboard]({config.DASHBOARD_URL})\n\n"
+                    f"_Accede desde cualquier navegador_",
+                    parse_mode="Markdown",
+                    disable_web_page_preview=True
+                )
+            return
         elif accion == "vincular":
             await update.message.reply_text(
                 "Para vincularte usa:\n/vincular TU_NOMBRE\n\nEjemplo: /vincular LUIS ARNALDO"
@@ -2269,7 +2279,21 @@ def main():
     logger.info("✅ Bot activo")
     logger.info("=" * 60)
     
+    # Dashboard Streamlit
+    import subprocess
+    dashboard_path = os.path.join(os.path.dirname(config.EXCEL_PATH), "dashboard_transporte.py")
+    if os.path.exists(dashboard_path):
+        subprocess.Popen(
+            ["streamlit", "run", dashboard_path, "--server.port", "8501", "--server.address", "0.0.0.0", "--server.headless", "true"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        logger.info("✅ Dashboard Streamlit arrancado en :8501")
+    else:
+        logger.warning(f"⚠️ Dashboard no encontrado: {dashboard_path}")
+
     app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+   
 
 
 if __name__ == "__main__":

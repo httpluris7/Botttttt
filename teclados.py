@@ -81,7 +81,7 @@ teclado_flota = ReplyKeyboardMarkup(
 # Submenú: Informes
 BOTONES_INFORMES = [
     ["📊 Estadísticas", "📈 Informe semanal"],
-    ["💰 Rentabilidad"],
+    ["💰 Rentabilidad", "📊 Dashboard"],
     ["⬅️ Volver al menú"]
 ]
 
@@ -145,6 +145,7 @@ MAPEO_BOTONES = {
     "📅 Cierre de día": "cierre_dia",
     "⬅️ Volver al menú": "volver_menu",
     
+    
     # Admin - Submenú Viajes
     "📦 Todos los viajes": "todos_viajes",
     "📋 Consultar rutas": "consultar_rutas",
@@ -161,6 +162,7 @@ MAPEO_BOTONES = {
     "📊 Estadísticas": "estadisticas",
     "📈 Informe semanal": "informe_semanal",
     "💰 Rentabilidad": "rentabilidad",
+    "📊 Dashboard": "dashboard",
     
     # No vinculado
     "🔗 Vincularme": "vincular",
