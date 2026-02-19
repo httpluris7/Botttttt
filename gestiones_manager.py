@@ -226,7 +226,8 @@ CAM_TRACTORA = 12
 CAM_REMOLQUE = 13
 CAM_UBICACION = 14
 CAM_CONFIRMAR = 15
-CAM_EDITAR_CAMPO = 16
+CAM_ABSENTISMO = 16
+CAM_EDITAR_CAMPO = 17
 
 # Viaje - Añadir
 VIA_ZONA = 20
@@ -385,6 +386,7 @@ class GestionesManager:
             '3': ('tractora', '🚛 Tractora'),
             '4': ('remolque', '📦 Remolque'),
             '5': ('ubicacion', '📍 Ubicación'),
+            '6': ('absentismo', '🚫 Absentismo'),
         }
 
     # ============================================================
@@ -446,6 +448,12 @@ class GestionesManager:
                     MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
                     MessageHandler(filters.Regex("^⬅️ Volver$"), self.cam_volver_remolque),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.cam_ubicacion),
+                ],
+                CAM_ABSENTISMO: [
+                    MessageHandler(filters.Regex("^❌ Cancelar$"), self.cancelar),
+                    MessageHandler(filters.Regex("^⬅️ Volver$"), self.cam_volver_ubicacion),
+                    MessageHandler(filters.Regex("^⏭️ Saltar$"), self.cam_saltar_absentismo),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.cam_absentismo),
                 ],
                 CAM_CONFIRMAR: [
                     MessageHandler(filters.Regex("^✅ Confirmar$"), self.cam_guardar),
@@ -852,7 +860,7 @@ class GestionesManager:
         context.user_data['camionero'] = {}
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
-            "🚛 *NUEVO CAMIONERO*\n\nPaso 1/5\n\n👤 *Nombre completo:*",
+            "🚛 *NUEVO CAMIONERO*\n\nPaso 1/6\n\n👤 *Nombre completo:*",
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
@@ -866,7 +874,7 @@ class GestionesManager:
         context.user_data['camionero']['nombre'] = resultado['valor']
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
-            "🚛 *NUEVO CAMIONERO*\n\nPaso 2/5\n\n📱 *Teléfono:*",
+            "🚛 *NUEVO CAMIONERO*\n\nPaso 2/6\n\n📱 *Teléfono:*",
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
@@ -880,7 +888,7 @@ class GestionesManager:
         context.user_data['camionero']['telefono'] = resultado['valor']
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
-            "🚛 *NUEVO CAMIONERO*\n\nPaso 3/5\n\n🚛 *Matrícula tractora:*\n\n_Ejemplo: 1234ABC_",
+            "🚛 *NUEVO CAMIONERO*\n\nPaso 3/6\n\n🚛 *Matrícula tractora:*\n\n_Ejemplo: 1234ABC_",
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
@@ -894,7 +902,7 @@ class GestionesManager:
         context.user_data['camionero']['tractora'] = resultado['valor']
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
-            "🚛 *NUEVO CAMIONERO*\n\nPaso 4/5\n\n📦 *Matrícula remolque:*\n\n_Ejemplo: R1234BBB_",
+            "🚛 *NUEVO CAMIONERO*\n\nPaso 4/6\n\n📦 *Matrícula remolque:*\n\n_Ejemplo: R1234BBB_",
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
@@ -908,7 +916,7 @@ class GestionesManager:
         context.user_data['camionero']['remolque'] = resultado['valor']
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
-            "🚛 *NUEVO CAMIONERO*\n\nPaso 5/5\n\n📍 *Ubicación base:*\n\n_Ejemplo: CALAHORRA_",
+            "🚛 *NUEVO CAMIONERO*\n\nPaso 5/6\n\n📍 *Ubicación base:*\n\n_Ejemplo: CALAHORRA_",
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
@@ -916,6 +924,29 @@ class GestionesManager:
     
     async def cam_ubicacion(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['camionero']['ubicacion'] = update.message.text.strip().upper()
+        keyboard = [["🏥 Baja", "🏖️ Vacaciones"], ["⏭️ Saltar"], ["⬅️ Volver", "❌ Cancelar"]]
+        await update.message.reply_text(
+            "🚛 *NUEVO CAMIONERO*\n\nPaso 6/6\n\n"
+            "🚫 *¿Absentismo?*\n\n"
+            "Pulsa un botón rápido, escribe otro motivo, o *Saltar* si está activo:",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
+        return CAM_ABSENTISMO
+    
+    async def cam_absentismo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        texto = update.message.text.strip().upper()
+        # Normalizar botones rápidos
+        if "BAJA" in texto:
+            context.user_data['camionero']['absentismo'] = "BAJA"
+        elif "VACACIONES" in texto:
+            context.user_data['camionero']['absentismo'] = "VACACIONES"
+        else:
+            context.user_data['camionero']['absentismo'] = texto
+        return await self.cam_mostrar_resumen(update, context)
+    
+    async def cam_saltar_absentismo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        context.user_data['camionero']['absentismo'] = ""
         return await self.cam_mostrar_resumen(update, context)
     
     async def cam_mostrar_resumen(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -927,6 +958,8 @@ class GestionesManager:
         resumen += f"3. 🚛 Tractora: *{cam.get('tractora', '-')}*\n"
         resumen += f"4. 📦 Remolque: *{cam.get('remolque', '-')}*\n"
         resumen += f"5. 📍 Ubicación: *{cam.get('ubicacion', '-')}*\n"
+        abs_val = cam.get('absentismo', '') or ''
+        resumen += f"6. 🚫 Absentismo: *{abs_val if abs_val else '-'}*\n"
         resumen += "━━━━━━━━━━━━━━━━━━━━\n\n¿Es correcto?"
         await update.message.reply_text(resumen, parse_mode="Markdown",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
@@ -935,8 +968,8 @@ class GestionesManager:
     async def cam_editar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
-            "✏️ *EDITAR CAMIONERO*\n\n¿Qué campo? (1-5)\n\n"
-            "1. 👤 Nombre\n2. 📱 Teléfono\n3. 🚛 Tractora\n4. 📦 Remolque\n5. 📍 Ubicación",
+            "✏️ *EDITAR CAMIONERO*\n\n¿Qué campo? (1-6)\n\n"
+            "1. 👤 Nombre\n2. 📱 Teléfono\n3. 🚛 Tractora\n4. 📦 Remolque\n5. 📍 Ubicación\n6. 🚫 Absentismo",
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
@@ -945,10 +978,24 @@ class GestionesManager:
     async def cam_editar_campo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         campo_num = update.message.text.strip()
         if campo_num not in self.campos_camionero:
-            await update.message.reply_text("⚠️ Introduce un número del 1 al 5:")
+            await update.message.reply_text("⚠️ Introduce un número del 1 al 6:")
             return CAM_EDITAR_CAMPO
         campo_key, campo_nombre = self.campos_camionero[campo_num]
         context.user_data['editando_campo'] = campo_key
+        
+        # Absentismo: mostrar botones rápidos
+        if campo_key == 'absentismo':
+            valor_actual = context.user_data['camionero'].get('absentismo', '') or '-'
+            keyboard = [["🏥 Baja", "🏖️ Vacaciones"], ["✅ Quitar absentismo"], ["⬅️ Volver", "❌ Cancelar"]]
+            await update.message.reply_text(
+                f"✏️ *EDITAR ABSENTISMO*\n\n"
+                f"Valor actual: *{valor_actual}*\n\n"
+                f"Pulsa un botón, escribe otro motivo, o *Quitar* para dejar activo:",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            )
+            return VIA_EDITAR_VALOR
+        
         valor_actual = context.user_data['camionero'].get(campo_key, '-')
         keyboard = [["⬅️ Volver", "❌ Cancelar"]]
         await update.message.reply_text(
@@ -971,6 +1018,7 @@ class GestionesManager:
                 fila += 1
             ws.cell(row=fila, column=2, value=cam.get('ubicacion'))
             ws.cell(row=fila, column=5, value=cam.get('nombre'))
+            # Nota flotante: teléfono + base
             partes_nota = []
             if cam.get('telefono'):
                 partes_nota.append(f"Tel. empresa: {cam['telefono']}")
@@ -979,12 +1027,19 @@ class GestionesManager:
             if partes_nota:
                 nota = Comment(" | ".join(partes_nota), "Bot")
                 ws.cell(row=fila, column=5).comment = nota
+            # Absentismo (columna 6)
+            absentismo = cam.get('absentismo', '')
+            if absentismo:
+                ws.cell(row=fila, column=6, value=absentismo)
             ws.cell(row=fila, column=7, value=cam.get('tractora'))
             ws.cell(row=fila, column=8, value=cam.get('remolque'))
             wb.save(self.excel_path)
             wb.close()
             drive_ok = self._sync_to_drive()
-            mensaje = f"✅ *¡CAMIONERO AÑADIDO!*\n\n👤 {cam.get('nombre')}\n📱 {cam.get('telefono')}\n🚛 {cam.get('tractora')}\n\n"
+            mensaje = f"✅ *¡CAMIONERO AÑADIDO!*\n\n👤 {cam.get('nombre')}\n📱 {cam.get('telefono')}\n🚛 {cam.get('tractora')}\n"
+            if absentismo:
+                mensaje += f"🚫 {absentismo}\n"
+            mensaje += "\n"
             mensaje += "☁️ _Sincronizado con Drive_" if drive_ok else "⚠️ _Guardado local_"
             await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=teclado_admin)
         except Exception as e:
@@ -1011,6 +1066,11 @@ class GestionesManager:
         await update.message.reply_text(f"📦 *Remolque:*\n_Anterior: {context.user_data['camionero'].get('remolque', '')}_",
             parse_mode="Markdown", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
         return CAM_REMOLQUE
+    async def cam_volver_ubicacion(self, update, context):
+        keyboard = [["⬅️ Volver", "❌ Cancelar"]]
+        await update.message.reply_text(f"📍 *Ubicación base:*\n_Anterior: {context.user_data['camionero'].get('ubicacion', '')}_",
+            parse_mode="Markdown", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
+        return CAM_UBICACION
 
     # ============================================================
     # AÑADIR VIAJE - FLUJO PRINCIPAL
@@ -1587,6 +1647,16 @@ class GestionesManager:
         if tipo == 'camionero':
             if campo == 'telefono':
                 valor = valor.replace(" ", "").replace("+34", "")
+            elif campo == 'absentismo':
+                # Botones rápidos y quitar
+                if "QUITAR" in valor.upper() or "ACTIVO" in valor.upper():
+                    valor = ""
+                elif "BAJA" in valor.upper():
+                    valor = "BAJA"
+                elif "VACACIONES" in valor.upper():
+                    valor = "VACACIONES"
+                else:
+                    valor = valor.upper()
             else:
                 valor = valor.upper()
             context.user_data['camionero'][campo] = valor
@@ -2083,6 +2153,7 @@ class GestionesManager:
                     'tractora': ws.cell(row=fila, column=7).value or '',
                     'remolque': ws.cell(row=fila, column=8).value or '',
                     'ubicacion': ws.cell(row=fila, column=2).value or '',
+                    'absentismo': str(ws.cell(row=fila, column=6).value or '').strip(),
                 }
                 camioneros.append(camionero)
                 if len(camioneros) >= limit:
@@ -2634,10 +2705,24 @@ class GestionesManager:
         
         if tipo == 'camionero':
             if campo_num not in self.campos_camionero:
-                await update.message.reply_text("⚠️ Introduce un número del 1 al 5:")
+                await update.message.reply_text("⚠️ Introduce un número del 1 al 6:")
                 return MOD_CAMPO
             campo_key, campo_nombre = self.campos_camionero[campo_num]
             context.user_data['editando_campo'] = campo_key
+            
+            # Absentismo: mostrar botones rápidos
+            if campo_key == 'absentismo':
+                valor_actual = context.user_data.get('camionero', {}).get('absentismo', '') or '-'
+                keyboard = [["🏥 Baja", "🏖️ Vacaciones"], ["✅ Quitar absentismo"], ["⬅️ Volver", "❌ Cancelar"]]
+                await update.message.reply_text(
+                    f"✏️ *EDITAR ABSENTISMO*\n\n"
+                    f"Valor actual: *{valor_actual}*\n\n"
+                    f"Pulsa un botón, escribe otro motivo, o *Quitar* para dejar activo:",
+                    parse_mode="Markdown",
+                    reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+                )
+                return MOD_VALOR
+            
             valor_actual = context.user_data.get('camionero', {}).get(campo_key, '-')
         else:
             if campo_num not in self.campos_viaje:
@@ -2686,6 +2771,15 @@ class GestionesManager:
             valor = "SI" if "SÍ" in valor.upper() or "SI" in valor.upper() else "NO"
         elif campo == 'telefono':
             valor = valor.replace(" ", "").replace("+34", "")
+        elif campo == 'absentismo':
+            if "QUITAR" in valor.upper() or "ACTIVO" in valor.upper():
+                valor = ""
+            elif "BAJA" in valor.upper():
+                valor = "BAJA"
+            elif "VACACIONES" in valor.upper():
+                valor = "VACACIONES"
+            else:
+                valor = valor.upper()
         else:
             valor = valor.upper()
         
@@ -2918,8 +3012,10 @@ class GestionesManager:
         mensaje += f"3. 🚛 Tractora: *{cam.get('tractora', '-')}*\n"
         mensaje += f"4. 📦 Remolque: *{cam.get('remolque', '-')}*\n"
         mensaje += f"5. 📍 Ubicación: *{cam.get('ubicacion', '-')}*\n"
+        abs_val = cam.get('absentismo', '') or ''
+        mensaje += f"6. 🚫 Absentismo: *{abs_val if abs_val else '-'}*\n"
         mensaje += "━━━━━━━━━━━━━━━━━━━━\n\n"
-        mensaje += "¿Qué campo editar? (1-5)\nO *Guardar cambios* para terminar."
+        mensaje += "¿Qué campo editar? (1-6)\nO *Guardar cambios* para terminar."
         await update.message.reply_text(
             mensaje, parse_mode="Markdown",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -2941,6 +3037,7 @@ class GestionesManager:
             
             ws.cell(row=fila, column=2, value=cam.get('ubicacion'))
             ws.cell(row=fila, column=5, value=cam.get('nombre'))
+            # Nota flotante: teléfono + base
             partes_nota = []
             if cam.get('telefono'):
                 partes_nota.append(f"Tel. empresa: {cam['telefono']}")
@@ -2948,7 +3045,9 @@ class GestionesManager:
                 partes_nota.append(f"Base: {cam['ubicacion']}")
             if partes_nota:
                 ws.cell(row=fila, column=5).comment = Comment(" | ".join(partes_nota), "Bot")
-        
+            # Absentismo (columna 6)
+            absentismo = cam.get('absentismo', '')
+            ws.cell(row=fila, column=6, value=absentismo if absentismo else None)
             ws.cell(row=fila, column=7, value=cam.get('tractora'))
             ws.cell(row=fila, column=8, value=cam.get('remolque'))
             
