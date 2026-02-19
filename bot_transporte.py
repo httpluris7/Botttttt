@@ -1926,7 +1926,7 @@ async def mensaje_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if es_admin(user.id):
                 await update.message.reply_text(
                     f"📊 *DASHBOARD ANALYTICS*\n\n"
-                    f"🔗 [Abrir Dashboard]({config.DASHBOARD_URL})\n\n"
+                    f"🔗 [Abrir Dashboard]({os.getenv('DASHBOARD_URL', 'http://localhost:8501')})\n\n"
                     f"_Accede desde cualquier navegador_",
                     parse_mode="Markdown",
                     disable_web_page_preview=True
