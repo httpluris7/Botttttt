@@ -2284,7 +2284,7 @@ def main():
     dashboard_path = "/root/bot-transporte/Botttttt/dashboard_transporte.py"
     if os.path.exists(dashboard_path):
         subprocess.Popen(
-            ["streamlit", "run", dashboard_path, "--server.port", "8501", "--server.address", "0.0.0.0", "--server.headless", "true"],
+            ["/root/bot-transporte/venv/bin/streamlit", "run", dashboard_path, "--server.port", "8501", "--server.address", "0.0.0.0", "--server.headless", "true"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         logger.info("✅ Dashboard Streamlit arrancado en :8501")
