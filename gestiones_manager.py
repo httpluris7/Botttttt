@@ -971,8 +971,13 @@ class GestionesManager:
                 fila += 1
             ws.cell(row=fila, column=2, value=cam.get('ubicacion'))
             ws.cell(row=fila, column=5, value=cam.get('nombre'))
+            partes_nota = []
             if cam.get('telefono'):
-                nota = Comment(f"Tel. empresa: {cam['telefono']}", "Bot")
+                partes_nota.append(f"Tel. empresa: {cam['telefono']}")
+            if cam.get('ubicacion'):
+                partes_nota.append(f"Base: {cam['ubicacion']}")
+            if partes_nota:
+                nota = Comment(" | ".join(partes_nota), "Bot")
                 ws.cell(row=fila, column=5).comment = nota
             ws.cell(row=fila, column=7, value=cam.get('tractora'))
             ws.cell(row=fila, column=8, value=cam.get('remolque'))
@@ -2936,8 +2941,14 @@ class GestionesManager:
             
             ws.cell(row=fila, column=2, value=cam.get('ubicacion'))
             ws.cell(row=fila, column=5, value=cam.get('nombre'))
+            partes_nota = []
             if cam.get('telefono'):
-                ws.cell(row=fila, column=5).comment = Comment(f"Tel. empresa: {cam['telefono']}", "Bot")
+                partes_nota.append(f"Tel. empresa: {cam['telefono']}")
+            if cam.get('ubicacion'):
+                partes_nota.append(f"Base: {cam['ubicacion']}")
+            if partes_nota:
+                ws.cell(row=fila, column=5).comment = Comment(" | ".join(partes_nota), "Bot")
+        
             ws.cell(row=fila, column=7, value=cam.get('tractora'))
             ws.cell(row=fila, column=8, value=cam.get('remolque'))
             
