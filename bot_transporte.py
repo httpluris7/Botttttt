@@ -73,6 +73,7 @@ from incidencias_conductor import crear_incidencias_conductor
 from cierre_dia import crear_cierre_dia
 from cierre_dia_handler import crear_cierre_handler
 from conductores_panel import crear_conductores_panel
+from albaranes_conductor import crear_albaranes_conductor
 
 gestiones_manager = None
 modificador_ruta = None
@@ -2219,6 +2220,16 @@ def main():
     )
     app.add_handler(conductores_panel.get_conversation_handler())
     logger.info("✅ Panel conductores")
+    
+    # Albaranes conductor
+    albaranes = crear_albaranes_conductor(
+        db_path=config.DB_PATH,
+        drive_service=drive_service if config.DRIVE_ENABLED else None,
+        carpeta_albaranes_id=None,
+        teclado_conductor=teclado_conductor
+    )
+    app.add_handler(albaranes.get_conversation_handler())
+    logger.info("✅ Albaranes conductor")
     
     # Handlers para callbacks de rutas (ADMIN)
     app.add_handler(CallbackQueryHandler(callback_ver_rutas, pattern="^rutas:(?!volver)"))
