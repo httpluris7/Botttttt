@@ -39,7 +39,7 @@ from datetime import datetime
 from pathlib import Path
 
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
-from teclados import obtener_teclado, es_boton, obtener_accion_boton, teclado_admin, teclado_viajes, teclado_flota, teclado_informes
+from teclados import obtener_teclado, es_boton, obtener_accion_boton, teclado_admin, teclado_viajes, teclado_flota, teclado_informes, teclado_conductor
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from dotenv import load_dotenv
 
